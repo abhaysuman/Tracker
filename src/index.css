@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background-color: #EBD4F4;
+  color: #4A4A4A;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom Utilities */
+.input-field {
+  @apply w-full px-6 py-3 rounded-full border border-pink-200 focus:outline-none focus:ring-2 focus:ring-pink-300 text-gray-600 placeholder-gray-400 text-center transition-all bg-white;
+}
+
+.btn-primary {
+  @apply w-full py-3 rounded-full bg-gradient-to-r from-[#FF8080] to-[#FF9999] text-white font-bold shadow-lg transform transition-transform active:scale-95 hover:shadow-xl hover:brightness-105;
+}
+
+.btn-secondary {
+  @apply w-full py-2 rounded-full border border-white/60 text-white text-sm hover:bg-white/10 transition-colors backdrop-blur-sm;
+}
