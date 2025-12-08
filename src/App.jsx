@@ -156,9 +156,10 @@ function App() {
       {user && (
         <Messenger 
           isOpen={true} 
-          activeChatFriend={chatTarget} // Opens chat if set
+          activeChatFriend={chatTarget} 
           onClose={() => setChatTarget(null)}
           user={user}
+          friends={userData?.friends || []} // <--- ADD THIS LINE
         />
       )}
 
