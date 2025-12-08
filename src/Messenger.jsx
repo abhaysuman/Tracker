@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, ChevronDown, Minimize2, ChevronLeft, Plus, Search } from 'lucide-react'; // Added Plus, Search
+import { MessageCircle, X, Send, ChevronDown, Minimize2, ChevronLeft, Plus, Search } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
-export default function Messenger({ isOpen, onClose, activeChatFriend, user, friends = [] }) { // Accepted 'friends' prop
+export default function Messenger({ isOpen, onClose, activeChatFriend, user, friends = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [activeChat, setActiveChat] = useState(null); 
-  const [showNewChat, setShowNewChat] = useState(false); // <--- State for "New Chat" screen
+  const [showNewChat, setShowNewChat] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [recentChats, setRecentChats] = useState([]);
   const scrollRef = useRef(null);
 
-  // If parent passes a friend to chat with, open it immediately
   useEffect(() => {
     if (activeChatFriend) {
       setIsExpanded(true);
@@ -22,11 +21,9 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     }
   }, [activeChatFriend]);
 
-  // 1. FETCH RECENT CHATS LIST (Fixed: Sorting done in app to avoid Index error)
+  // 1. FETCH RECENT CHATS LIST (Sorting done in app to avoid Index error)
   useEffect(() => {
     if (!user) return;
-    
-    // REMOVED 'orderBy' from here to fix the blank screen
     const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -35,10 +32,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         const otherUser = data.users.find(u => u.uid !== user.uid);
         return { id: doc.id, ...data, otherUser };
       });
-      
-      // Sort them here instead (Newest first)
       chats.sort((a, b) => (b.lastUpdated?.toMillis() || 0) - (a.lastUpdated?.toMillis() || 0));
-      
       setRecentChats(chats);
     });
     return () => unsubscribe();
@@ -84,7 +78,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     setInputText("");
   };
 
-  // 4. START NEW CHAT (From + Button)
   const startNewChat = (friend) => {
     setActiveChat(friend);
     setShowNewChat(false);
@@ -96,7 +89,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     <div className="fixed bottom-0 right-4 z-[100] flex flex-col items-end pointer-events-none">
       <div className="pointer-events-auto">
         
-        {/* --- MAIN MESSENGER WINDOW --- */}
+        {/* --- MAIN MESSENGER WINDOW (w-80 width) --- */}
         <AnimatePresence>
           {isExpanded && (
             <motion.div 
@@ -104,13 +97,13 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               animate={{ y: 0, opacity: 1 }} 
               exit={{ y: 400, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              // KEEPING w-80 HERE
               className="w-80 h-96 bg-white dark:bg-midnight-card rounded-t-2xl shadow-2xl border border-gray-200 dark:border-white/10 flex flex-col overflow-hidden"
             >
               
               {/* HEADER */}
               <div className="bg-pink-500 p-3 flex justify-between items-center text-white shadow-md z-10">
                 {activeChat ? (
-                  // CHAT HEADER
                   <div className="flex items-center gap-2">
                     <button onClick={() => setActiveChat(null)} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button>
                     <div className="w-7 h-7 rounded-full bg-white/20 overflow-hidden border border-white/50">
@@ -119,13 +112,11 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     <span className="font-bold text-sm truncate max-w-[120px]">{activeChat.name || activeChat.displayName}</span>
                   </div>
                 ) : showNewChat ? (
-                  // NEW CHAT HEADER
                   <div className="flex items-center gap-2">
                     <button onClick={() => setShowNewChat(false)} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button>
                     <span className="font-bold text-sm">New Message</span>
                   </div>
                 ) : (
-                  // MAIN LIST HEADER
                   <span className="font-bold text-lg tracking-tight">Messages</span>
                 )}
                 
@@ -207,7 +198,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                 )}
               </div>
 
-              {/* INPUT AREA (Only if active chat) */}
+              {/* INPUT AREA */}
               {activeChat && (
                 <form onSubmit={sendMessage} className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 flex gap-2 shrink-0">
                   <input 
@@ -227,22 +218,25 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
           )}
         </AnimatePresence>
         
-        {/* --- FLOATING TOGGLE BUTTON --- */}
+        {/* --- FLOATING TOGGLE BUTTON (UPDATED WIDTH) --- */}
         {!isExpanded && (
           <motion.button 
             initial={{ scale: 0 }} animate={{ scale: 1 }}
             onClick={() => setIsExpanded(true)}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-white dark:bg-midnight-card text-gray-700 dark:text-white p-3 rounded-t-xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex items-center gap-2 border border-b-0 border-gray-100 dark:border-white/10 cursor-pointer"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            // ADDED 'w-80' and 'justify-between' here:
+            className="w-80 bg-white dark:bg-midnight-card text-gray-700 dark:text-white p-3 rounded-t-xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex items-center justify-between border border-b-0 border-gray-100 dark:border-white/10 cursor-pointer"
           >
-            <div className="relative">
-              <div className="w-8 h-8 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center text-pink-500">
-                 <MessageCircle size={18} fill="currentColor" />
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className="w-8 h-8 rounded-full bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center text-pink-500">
+                   <MessageCircle size={18} fill="currentColor" />
+                </div>
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-midnight-card rounded-full"></span>
               </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white dark:border-midnight-card rounded-full"></span>
+              <span className="font-bold text-sm">Messaging</span>
             </div>
-            <span className="font-bold text-sm pr-2">Messaging</span>
             <ChevronDown size={16} className="rotate-180 text-gray-400" />
           </motion.button>
         )}
