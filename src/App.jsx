@@ -12,6 +12,8 @@ import Toast from './Toast';
 import FriendActivityTab from './FriendActivityTab'; // <--- Import this
 import { Settings, Users } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
+// MAKE SURE BOTH 'motion' AND 'AnimatePresence' ARE IMPORTED
+import { motion, AnimatePresence } from 'framer-motion';
 
 // FIREBASE
 import { auth, db } from './firebase';
