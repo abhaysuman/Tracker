@@ -9,7 +9,7 @@ export default function Waveform({ audioUrl, stream, isMe, isRecording }) {
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState('0:00');
   const [currentTime, setCurrentTime] = useState('0:00');
-  const [hasError, setHasError] = useState(false); // Safety flag
+  const [isReady, setIsReady] = useState(false); // New state to prevent crash
 
   const formatTime = (time) => {
     if (!time || isNaN(time)) return '0:00';
@@ -19,11 +19,20 @@ export default function Waveform({ audioUrl, stream, isMe, isRecording }) {
   };
 
   useEffect(() => {
-    if (!containerRef.current || hasError) return;
+    // 1. Wait for animation to finish before initializing (Prevents Blank Screen)
+    const timer = setTimeout(() => {
+      setIsReady(true);
+    }, 200); 
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isReady || !containerRef.current) return;
 
     const initWave = async () => {
       try {
-        // Destroy existing instance
+        // Cleanup old instance
         if (wavesurfer.current) {
           wavesurfer.current.destroy();
         }
@@ -32,7 +41,7 @@ export default function Waveform({ audioUrl, stream, isMe, isRecording }) {
         if (isRecording && stream) {
           wavesurfer.current = WaveSurfer.create({
             container: containerRef.current,
-            waveColor: '#ec4899',
+            waveColor: '#ec4899', // Pink-500
             progressColor: '#ec4899',
             cursorColor: 'transparent',
             barWidth: 3,
@@ -68,27 +77,20 @@ export default function Waveform({ audioUrl, stream, isMe, isRecording }) {
           wavesurfer.current.on('ready', () => setDuration(formatTime(wavesurfer.current.getDuration())));
           wavesurfer.current.on('audioprocess', () => setCurrentTime(formatTime(wavesurfer.current.getCurrentTime())));
           wavesurfer.current.on('finish', () => setPlaying(false));
-          wavesurfer.current.on('error', (e) => {
-            console.error("Waveform error:", e);
-            setHasError(true); // Fallback if url is bad
-          });
         }
       } catch (err) {
-        console.error("WaveSurfer crash prevented:", err);
-        setHasError(true);
+        console.warn("Waveform failed to load, falling back.", err);
       }
     };
 
-    // Small timeout to ensure DOM is ready
-    const timer = setTimeout(initWave, 0);
+    initWave();
 
     return () => {
-      clearTimeout(timer);
       if (wavesurfer.current) {
         try { wavesurfer.current.destroy(); } catch(e) {}
       }
     };
-  }, [audioUrl, stream, isMe, isRecording]);
+  }, [audioUrl, stream, isMe, isRecording, isReady]);
 
   const handlePlayPause = () => {
     if (wavesurfer.current) {
@@ -97,19 +99,19 @@ export default function Waveform({ audioUrl, stream, isMe, isRecording }) {
     }
   };
 
-  // --- SAFETY FALLBACK ---
-  if (hasError) {
-    if (isRecording) return <div className="text-xs text-red-400">Recording...</div>;
-    return (
-      <audio controls src={audioUrl} className="w-full h-8" />
-    );
+  // --- RENDER ---
+
+  // If waiting for animation, show placeholder
+  if (!isReady) {
+    return <div className="h-8 w-32 bg-gray-100 dark:bg-white/10 rounded animate-pulse" />;
   }
 
-  // --- NORMAL RENDER ---
+  // Recording View
   if (isRecording) {
     return <div ref={containerRef} className="w-full h-full flex items-center" />;
   }
 
+  // Playback View
   return (
     <div className={`flex items-center gap-3 p-2 rounded-2xl w-full min-w-[160px] ${isMe ? 'bg-pink-500 text-white rounded-tr-none' : 'bg-white dark:bg-white/10 dark:text-white rounded-tl-none shadow-sm'}`}>
       <button 
