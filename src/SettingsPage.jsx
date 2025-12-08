@@ -1,12 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, Bell, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
-import { doc, updateDoc, collection, onSnapshot, query, where } from 'firebase/firestore'; // <--- Added imports
+import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore'; 
 import { updateProfile } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
 import FeedbackModal from './FeedbackModal';
-import NotificationsModal from './NotificationsModal'; // <--- Import Notification Modal
+
+// NOTE: Notifications were removed from here and moved to App.jsx (Top Right)
 
 export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout, user, userData }) {
   
@@ -17,23 +18,8 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
   const [uploadingImg, setUploadingImg] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   
-  // NOTIFICATIONS STATE
-  const [showNotifs, setShowNotifs] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-
   const fileInputRef = useRef(null);
 
-  // --- LISTEN FOR UNREAD NOTIFICATIONS ---
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, "users", user.uid, "notifications"));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setUnreadCount(snap.size);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // ... (Keep handleImageUpload, handleSaveName, handleSaveStatus, togglePrivacy exactly as they were) ...
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -74,7 +60,6 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
     } catch (error) { console.error(error); }
   };
 
-  // ... (Keep UI Components: SettingSection, SettingRow, Toggle) ...
   const SettingSection = ({ title, children }) => (
     <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm mb-4 transition-colors duration-300">
       <h3 className="text-gray-400 dark:text-gray-500 font-bold text-xs uppercase tracking-wider mb-4">{title}</h3>
@@ -82,12 +67,11 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
     </div>
   );
 
-  const SettingRow = ({ icon: Icon, label, action, onClick, badge }) => (
+  const SettingRow = ({ icon: Icon, label, action, onClick }) => (
     <div className="flex items-center justify-between cursor-pointer" onClick={onClick}>
       <div className="flex items-center gap-3 text-gray-700 dark:text-gray-200">
         <div className="p-2 bg-pink-50 dark:bg-pink-900/30 text-pink-400 rounded-full relative">
           <Icon size={18} />
-          {badge > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-midnight-card"></span>}
         </div>
         <span className="font-medium text-sm">{label}</span>
       </div>
@@ -149,14 +133,7 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
         </div>
 
         <SettingSection title="Preferences">
-          {/* UPDATED NOTIFICATION ROW */}
-          <SettingRow 
-             icon={Bell} 
-             label="Notifications" 
-             badge={unreadCount}
-             onClick={() => setShowNotifs(true)}
-             action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} 
-          />
+          {/* Note: Notifications Moved to Top Bar */}
           <SettingRow icon={isDarkMode ? Sun : Moon} label="Dark Mode" action={<Toggle active={isDarkMode} onClick={toggleTheme} />} />
         </SettingSection>
 
@@ -166,16 +143,3 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
         </SettingSection>
 
         <SettingSection title="Support">
-           <SettingRow icon={MessageSquare} label="Send Feedback" onClick={() => setShowFeedback(true)} action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} />
-        </SettingSection>
-
-        <button onClick={onLogout} className="w-full bg-white dark:bg-midnight-card rounded-2xl p-4 text-red-400 font-bold flex items-center justify-center gap-2 shadow-sm mt-4 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
-          <LogOut size={18} /> Log Out
-        </button>
-      </motion.div>
-
-      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} user={user} />
-      <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
-    </div>
-  );
-}
