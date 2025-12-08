@@ -282,6 +282,7 @@ function App() {
           activeChatFriend={chatTarget} 
           onClose={() => setChatTarget(null)}
           user={user}
+          userData={userData}
           friends={userData?.friends || []}
           onStartCall={(roomId) => { setActiveCallId(roomId); setCallRole('caller'); }}
           onJoinCall={(roomId) => { setActiveCallId(roomId); setCallRole('callee'); }}
