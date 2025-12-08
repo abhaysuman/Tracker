@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Trash2 } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import Waveform from './Waveform';
+import Waveform from './Waveform'; 
 
 export default function Messenger({ isOpen, onClose, activeChatFriend, user, friends = [], onStartCall, onJoinCall }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -25,7 +25,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const timerRef = useRef(null);
 
   // --- CLOUDINARY CONFIG ---
-  // Ensure no spaces!
   const CLOUD_NAME = "qbqrzy56"; 
   const UPLOAD_PRESET = "gf_mood_app"; 
 
@@ -134,14 +133,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
-        // Safety check: Empty recording?
-        if (audioBlob.size === 0) {
-            console.error("Empty audio blob");
-            setIsRecording(false);
-            setIsUploading(false);
-            return;
-        }
-
         // Stop tracks
         if (mediaRecorderRef.current.stream) {
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -150,11 +141,11 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         const formData = new FormData();
         formData.append('file', audioBlob);
         formData.append('upload_preset', UPLOAD_PRESET);
-        // FIX: Remove 'resource_type' param and use '/auto/upload' in URL instead
+        // REMOVED 'resource_type' param to fix "Unknown API Key" error
 
         try {
-          // USE '/auto/upload' URL -> This handles Audio/Video/Image automatically
-          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME.trim()}/auto/upload`, {
+          // REVERTED to generic /upload (Works best for Unsigned)
+          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
             method: 'POST',
             body: formData
           });
