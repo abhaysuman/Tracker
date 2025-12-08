@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion'; // <--- FIXED THIS LINE
-import { Smile, Frown, Meh, CloudRain, Sun, Zap, Heart, Flame } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion'; 
+import { Smile, Heart, Flame, Home, Calendar, BarChart2, History, Gift } from 'lucide-react'; // <--- Standard Icons Imported
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
@@ -30,7 +30,7 @@ export default function HomePage({ onNavigate, onSaveMood }) {
 
       if (snap.exists()) {
         const data = snap.data();
-        const lastDate = data.lastLoginDate; // String "YYYY-MM-DD"
+        const lastDate = data.lastLoginDate; 
         const currentStreak = data.streak || 0;
         
         const today = new Date();
@@ -40,15 +40,12 @@ export default function HomePage({ onNavigate, onSaveMood }) {
         const yesterdayStr = yesterday.toISOString().split('T')[0];
 
         if (lastDate === todayStr) {
-          setStreak(currentStreak); // Already logged today
+          setStreak(currentStreak); 
         } else if (lastDate === yesterdayStr) {
-          // Logged in yesterday, increment!
           const newStreak = currentStreak + 1;
           setStreak(newStreak);
           await updateDoc(userRef, { streak: newStreak, lastLoginDate: todayStr });
         } else {
-          // Streak broken (or first login)
-          // Only reset if lastLogin was NOT today
           if (lastDate !== todayStr) {
              setStreak(1);
              await updateDoc(userRef, { streak: 1, lastLoginDate: todayStr });
@@ -159,11 +156,12 @@ export default function HomePage({ onNavigate, onSaveMood }) {
         </AnimatePresence>
       </motion.div>
 
+      {/* --- RESTORED NAVBAR ICONS --- */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md rounded-full shadow-lg border border-white/50 dark:border-white/10 px-6 py-4 flex justify-between items-center z-40 transition-colors duration-300">
-        <NavIcon icon={<Home size={20} />} onClick={() => onNavigate('home')} />
-        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
+        <NavIcon icon={<Home size={20} />} active onClick={() => onNavigate('home')} />
         <NavIcon icon={<Calendar size={20} />} onClick={() => onNavigate('calendar')} />
-        <NavIcon icon={<BarChart2 size={20} />} active onClick={() => onNavigate('insights')} />
+        <NavIcon icon={<BarChart2 size={20} />} onClick={() => onNavigate('insights')} />
+        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
         <NavIcon icon={<Gift size={20} />} onClick={() => onNavigate('surprise')} />
       </div>
 
