@@ -175,55 +175,52 @@ function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'dark' : ''}`}>
-      {currentPage === 'landing' && <LandingPage onLoginSuccess={() => {}} />}
       
-      {currentPage === 'setup' && (
-        <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
-      )}
-
+      {/* ... (Keep all your existing pages logic here) ... */}
+      
+      {currentPage === 'landing' && <LandingPage onLoginSuccess={() => {}} />}
+      {currentPage === 'setup' && <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
       {currentPage === 'home' && <HomePage onNavigate={setCurrentPage} onSaveMood={handleSaveMood} />}
       {currentPage === 'calendar' && <CalendarPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
       {currentPage === 'insights' && <InsightsPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
       {currentPage === 'history' && <HistoryPage onNavigate={setCurrentPage} savedMoods={moodHistory} onDeleteMood={handleDeleteMood} />}
       {currentPage === 'surprise' && <SurprisePage onNavigate={setCurrentPage} />}
-      {currentPage === 'bucketlist' && <BucketListPage onNavigate={setCurrentPage} />} {/* <--- NEW ROUTE */}
+      
+      {/* THIS IS THE NEW PAGE */}
+      {currentPage === 'bucketlist' && <BucketListPage onNavigate={setCurrentPage} />}
       
       {currentPage === 'settings' && <SettingsPage onNavigate={setCurrentPage} isDarkMode={isDarkMode} toggleTheme={toggleTheme} onLogout={handleLogout} user={user} userData={userData} openDialog={openDialog} />}
-      
       {currentPage === 'friends' && <FriendsPage onNavigate={setCurrentPage} currentUser={user} userData={userData} showToast={showToast} onViewProfile={(uid) => setViewProfileUid(uid)} openDialog={openDialog} />}
 
       {user && currentPage !== 'landing' && currentPage !== 'setup' && <FriendActivityTab friends={userData?.friends || []} />}
-
       <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
-
-      {user && (
-        <Messenger isOpen={true} activeChatFriend={chatTarget} onClose={() => setChatTarget(null)} user={user} userData={userData} friends={userData?.friends || []} onStartCall={(roomId) => { setActiveCallId(roomId); setCallRole('caller'); }} onJoinCall={(roomId) => { setActiveCallId(roomId); setCallRole('callee'); }} openDialog={openDialog} />
-      )}
-
+      
+      {/* ... (Keep Messenger, UserProfileModal, VideoCall, IncomingCall, GlobalDialog, Toast) ... */}
+      {user && <Messenger isOpen={true} activeChatFriend={chatTarget} onClose={() => setChatTarget(null)} user={user} userData={userData} friends={userData?.friends || []} onStartCall={(roomId) => { setActiveCallId(roomId); setCallRole('caller'); }} onJoinCall={(roomId) => { setActiveCallId(roomId); setCallRole('callee'); }} openDialog={openDialog} />}
       <UserProfileModal isOpen={!!viewProfileUid} onClose={() => setViewProfileUid(null)} targetUid={viewProfileUid} onMessageClick={(friendData) => { setChatTarget(friendData); setViewProfileUid(null); }} />
-
       {activeCallId && <VideoCall roomId={activeCallId} role={callRole} onClose={() => { setActiveCallId(null); setCallRole(null); window.location.reload(); }} />}
-
       <AnimatePresence>{incomingCall && <motion.div initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }} className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[300] bg-white dark:bg-midnight-card px-6 py-4 rounded-full shadow-2xl border-2 border-pink-500 flex items-center gap-6"><div className="flex items-center gap-3"><div className="p-3 bg-pink-100 rounded-full animate-pulse text-pink-600"><Phone size={24} className="shake-animation" /></div><div><h3 className="font-bold text-gray-800 dark:text-white text-lg">{incomingCall.senderName}</h3><p className="text-pink-500 text-xs font-bold uppercase tracking-wider">Incoming Video Call...</p></div></div><div className="flex gap-2"><button onClick={rejectCall} className="p-3 bg-red-100 text-red-500 rounded-full hover:bg-red-200 transition-colors"><X size={20} /></button><button onClick={answerCall} className="p-3 bg-green-500 text-white rounded-full hover:bg-green-600 shadow-lg transition-transform hover:scale-110"><VideoIcon size={20} fill="currentColor" /></button></div></motion.div>}</AnimatePresence>
-
       <GlobalDialog isOpen={dialogOpen} config={dialogConfig} onClose={() => setDialogOpen(false)} />
-
       <AnimatePresence>{toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}</AnimatePresence>
 
-      {/* FLOATING BUTTONS */}
+      {/* --- FLOATING BUTTONS (HERE IS THE BUCKET LIST) --- */}
       {currentPage !== 'landing' && currentPage !== 'setup' && (
         <>
           {currentPage !== 'settings' && <button onClick={() => setCurrentPage('settings')} className="fixed bottom-6 left-6 z-50 p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><Settings size={24} /></button>}
+          
           <div className="fixed top-6 right-6 z-50 flex gap-3">
             
-            {/* NEW BUCKET LIST BUTTON */}
+            {/* 1. BUCKET LIST BUTTON */}
             {currentPage !== 'bucketlist' && (
               <button onClick={() => setCurrentPage('bucketlist')} className="p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95">
                 <CheckSquare size={24} />
               </button>
             )}
 
+            {/* 2. NOTIFICATIONS */}
             <button onClick={() => setShowNotifs(true)} className="relative p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><Bell size={24} />{unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white dark:border-midnight-card">{unreadCount}</span>}</button>
+            
+            {/* 3. FRIENDS */}
             {currentPage !== 'friends' && <button onClick={() => setCurrentPage('friends')} className="p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><Users size={24} /></button>}
           </div>
         </>
@@ -231,5 +228,4 @@ function App() {
     </div>
   );
 }
-
 export default App;
