@@ -24,7 +24,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
 
-  // --- CLOUDINARY CONFIG (FIXED) ---
+  // --- CLOUDINARY CONFIG ---
   const CLOUD_NAME = "qbqrzy56"; 
   const UPLOAD_PRESET = "gf_mood_app"; 
 
@@ -133,18 +133,20 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
+        // Stop tracks
         if (mediaRecorderRef.current.stream) {
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
         }
 
+        // --- ORIGINAL UPLOAD LOGIC ---
         const formData = new FormData();
         formData.append('file', audioBlob);
         formData.append('upload_preset', UPLOAD_PRESET);
-        // NO resource_type here, we put it in the URL instead
+        formData.append('resource_type', 'auto'); // Let Cloudinary decide
 
         try {
-          // FIX: Use '/video/upload' for audio files (Cloudinary treats audio as video)
-          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`, {
+          // USE GENERIC /upload ENDPOINT (Best for Unsigned)
+          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
             method: 'POST',
             body: formData
           });
