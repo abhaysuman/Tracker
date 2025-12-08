@@ -1,14 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion'; 
-import { Smile, Heart, Flame, Home, Calendar, BarChart2, History, Gift } from 'lucide-react'; // <--- Standard Icons Imported
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Smile, Heart, Flame, Home, Calendar, BarChart2, History, Gift, Camera, X, Paperclip } from 'lucide-react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth, storage } from './firebase';
 
 export default function HomePage({ onNavigate, onSaveMood }) {
   const [selectedMood, setSelectedMood] = useState(null);
   const [note, setNote] = useState('');
   const [tags, setTags] = useState([]);
   const [streak, setStreak] = useState(0);
+  const [stickyNote, setStickyNote] = useState(null); // <--- Sticky Note State
+  
+  // Photo State
+  const [moodPhoto, setMoodPhoto] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const moods = [
     { emoji: '😍', label: 'Amazing', color: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-300' },
@@ -21,18 +29,23 @@ export default function HomePage({ onNavigate, onSaveMood }) {
 
   const possibleTags = ['Work', 'Family', 'Love', 'Sleep', 'Food', 'Weather', 'Health', 'School'];
 
-  // --- STREAK CALCULATION LOGIC ---
   useEffect(() => {
-    const checkStreak = async () => {
+    const checkUser = async () => {
       if (!auth.currentUser) return;
       const userRef = doc(db, "users", auth.currentUser.uid);
       const snap = await getDoc(userRef);
 
       if (snap.exists()) {
         const data = snap.data();
+        
+        // 1. GET STICKY NOTE
+        if (data.stickyNote) {
+          setStickyNote(data.stickyNote);
+        }
+
+        // 2. STREAK LOGIC
         const lastDate = data.lastLoginDate; 
         const currentStreak = data.streak || 0;
-        
         const today = new Date();
         const todayStr = today.toISOString().split('T')[0];
         const yesterday = new Date(today);
@@ -55,7 +68,7 @@ export default function HomePage({ onNavigate, onSaveMood }) {
         }
       }
     };
-    checkStreak();
+    checkUser();
   }, []);
 
   const handleMoodSelect = (mood) => {
@@ -67,17 +80,59 @@ export default function HomePage({ onNavigate, onSaveMood }) {
     else setTags([...tags, tag]);
   };
 
-  const save = () => {
+  // --- PHOTO HANDLING ---
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setMoodPhoto(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  const removePhoto = () => {
+    setMoodPhoto(null);
+    setPreviewUrl(null);
+  };
+
+  const save = async () => {
     if (!selectedMood) return;
+    setUploading(true);
+
+    let photoURL = null;
+
+    // Upload Photo if exists
+    if (moodPhoto) {
+      try {
+        const storageRef = ref(storage, `mood_photos/${auth.currentUser.uid}/${Date.now()}`);
+        await uploadBytes(storageRef, moodPhoto);
+        photoURL = await getDownloadURL(storageRef);
+      } catch (e) {
+        console.error("Photo upload failed", e);
+      }
+    }
+
     onSaveMood({
       emoji: selectedMood.emoji,
       label: selectedMood.label,
       note,
-      tags
+      tags,
+      photo: photoURL // <--- Pass the photo URL to App.jsx
     });
+
+    // Reset
     setSelectedMood(null);
     setNote('');
     setTags([]);
+    setMoodPhoto(null);
+    setPreviewUrl(null);
+    setUploading(false);
+  };
+
+  // Clear note
+  const clearSticky = async () => {
+    if(!auth.currentUser) return;
+    setStickyNote(null);
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { stickyNote: null });
   };
 
   return (
@@ -92,7 +147,6 @@ export default function HomePage({ onNavigate, onSaveMood }) {
           <p className="text-gray-500 dark:text-gray-400">How are you?</p>
         </div>
         
-        {/* Streak Display */}
         <div className="bg-white dark:bg-midnight-card px-3 py-2 rounded-2xl shadow-sm flex items-center gap-2 border border-orange-100 dark:border-orange-900/30">
           <div className="bg-orange-100 dark:bg-orange-900/20 p-1.5 rounded-full text-orange-500">
             <Flame size={16} fill="currentColor" />
@@ -103,6 +157,27 @@ export default function HomePage({ onNavigate, onSaveMood }) {
           </div>
         </div>
       </div>
+
+      {/* --- STICKY NOTE WIDGET --- */}
+      <AnimatePresence>
+        {stickyNote && (
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+            className="w-[90%] max-w-md bg-yellow-100 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 rounded-xl shadow-sm mb-6 relative group"
+          >
+            <div className="flex items-start gap-3">
+              <Paperclip size={20} className="text-yellow-600 dark:text-yellow-500 mt-1 shrink-0" />
+              <div>
+                <p className="text-gray-800 dark:text-white font-handwriting text-lg leading-tight">"{stickyNote.message}"</p>
+                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2 font-bold uppercase tracking-wider">- {stickyNote.sender}</p>
+              </div>
+            </div>
+            <button onClick={clearSticky} className="absolute top-2 right-2 p-1 text-yellow-600/50 hover:text-yellow-600 transition-colors">
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.div 
         initial={{ y: 20, opacity: 0 }}
@@ -143,25 +218,43 @@ export default function HomePage({ onNavigate, onSaveMood }) {
                    placeholder="Add a note..." 
                    value={note}
                    onChange={(e) => setNote(e.target.value)}
-                   className="w-full bg-white dark:bg-white/5 rounded-xl p-3 text-sm text-gray-700 dark:text-white outline-none border border-gray-200 dark:border-gray-600 focus:border-pink-300 transition-colors"
+                   className="w-full bg-white dark:bg-white/5 rounded-xl p-3 text-sm text-gray-700 dark:text-white outline-none border border-gray-200 dark:border-gray-600 focus:border-pink-300 transition-colors mb-4"
                    rows="3"
                  />
+
+                 {/* --- PHOTO UPLOAD AREA --- */}
+                 {previewUrl ? (
+                    <div className="relative w-full h-40 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-600">
+                      <img src={previewUrl} className="w-full h-full object-cover" alt="preview" />
+                      <button onClick={removePhoto} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70">
+                        <X size={16} />
+                      </button>
+                    </div>
+                 ) : (
+                   <button 
+                    onClick={() => fileInputRef.current.click()}
+                    className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex items-center justify-center gap-2 text-gray-500 hover:text-pink-500 hover:border-pink-300 transition-colors"
+                   >
+                     <Camera size={18} /> Attach Photo
+                   </button>
+                 )}
+                 <input type="file" ref={fileInputRef} onChange={handlePhotoSelect} accept="image/*" className="hidden" />
+
               </div>
 
-              <button onClick={save} className="w-full py-4 rounded-xl bg-pink-400 hover:bg-pink-500 text-white font-bold shadow-lg shadow-pink-200 dark:shadow-none transition-all active:scale-95 flex items-center justify-center gap-2">
-                Save Entry <Heart size={18} fill="currentColor" />
+              <button onClick={save} disabled={uploading} className="w-full py-4 rounded-xl bg-pink-400 hover:bg-pink-500 text-white font-bold shadow-lg shadow-pink-200 dark:shadow-none transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50">
+                {uploading ? "Uploading..." : <>Save Entry <Heart size={18} fill="currentColor" /></>}
               </button>
             </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
 
-      {/* --- RESTORED NAVBAR ICONS --- */}
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md rounded-full shadow-lg border border-white/50 dark:border-white/10 px-6 py-4 flex justify-between items-center z-40 transition-colors duration-300">
         <NavIcon icon={<Home size={20} />} active onClick={() => onNavigate('home')} />
-        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
         <NavIcon icon={<Calendar size={20} />} onClick={() => onNavigate('calendar')} />
         <NavIcon icon={<BarChart2 size={20} />} onClick={() => onNavigate('insights')} />
+        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
         <NavIcon icon={<Gift size={20} />} onClick={() => onNavigate('surprise')} />
       </div>
 

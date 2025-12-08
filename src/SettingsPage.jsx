@@ -1,13 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore'; 
+import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare, Award } from 'lucide-react'; // Added Award
+import { doc, updateDoc } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
 import FeedbackModal from './FeedbackModal';
-
-// NOTE: Notifications were removed from here and moved to App.jsx (Top Right)
 
 export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout, user, userData }) {
   
@@ -17,9 +15,32 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
   const [isStatusEditing, setIsStatusEditing] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
-  
   const fileInputRef = useRef(null);
 
+  // --- BADGE LOGIC ---
+  const getBadges = () => {
+    const badges = [];
+    const streak = userData?.streak || 0;
+    const friendCount = userData?.friends?.length || 0;
+    
+    // Streak Badges
+    if (streak >= 3) badges.push({ icon: '🔥', label: 'Heating Up', color: 'bg-orange-100 text-orange-600' });
+    if (streak >= 7) badges.push({ icon: '🚀', label: '7 Day Streak', color: 'bg-purple-100 text-purple-600' });
+    if (streak >= 30) badges.push({ icon: '👑', label: 'Commitment', color: 'bg-yellow-100 text-yellow-600' });
+
+    // Social Badges
+    if (friendCount >= 1) badges.push({ icon: '🌱', label: 'Connected', color: 'bg-green-100 text-green-600' });
+    if (friendCount >= 5) badges.push({ icon: '🦋', label: 'Social Butterfly', color: 'bg-pink-100 text-pink-600' });
+
+    // Beta User
+    badges.push({ icon: '🛠️', label: 'Early Adopter', color: 'bg-gray-100 text-gray-600' });
+
+    return badges;
+  };
+
+  const myBadges = getBadges();
+
+  // ... (Keep existing handlers: handleImageUpload, handleSaveName, etc.) ...
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -98,42 +119,56 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="px-6 max-w-md mx-auto">
         
         {/* PROFILE CARD */}
-        <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm mb-6 flex items-center gap-4 transition-colors duration-300 relative overflow-hidden">
-          <div className="relative shrink-0">
-            <div onClick={() => fileInputRef.current.click()} className="w-20 h-20 bg-pink-100 dark:bg-pink-900/20 rounded-full flex items-center justify-center text-2xl border-4 border-pink-50 dark:border-pink-900/10 overflow-hidden cursor-pointer group">
-               {uploadingImg ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div> : (userData?.photoURL || user?.photoURL) ? <img src={userData?.photoURL || user?.photoURL} alt="User" className="w-full h-full object-cover" /> : "👩‍❤️‍👨"}
-               <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white" /></div>
+        <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm mb-6 transition-colors duration-300 relative overflow-hidden">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="relative shrink-0">
+              <div onClick={() => fileInputRef.current.click()} className="w-20 h-20 bg-pink-100 dark:bg-pink-900/20 rounded-full flex items-center justify-center text-2xl border-4 border-pink-50 dark:border-pink-900/10 overflow-hidden cursor-pointer group">
+                 {uploadingImg ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div> : (userData?.photoURL || user?.photoURL) ? <img src={userData?.photoURL || user?.photoURL} alt="User" className="w-full h-full object-cover" /> : "👩‍❤️‍👨"}
+                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Camera size={20} className="text-white" /></div>
+              </div>
+              <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
             </div>
-            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+            <div className="flex-1 min-w-0">
+              {isEditing ? (
+                <div className="flex items-center gap-2 mb-1">
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-gray-700 dark:text-white text-sm" autoFocus />
+                  <button onClick={handleSaveName} className="p-1.5 bg-green-100 text-green-600 rounded-full"><Check size={14} /></button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                   <h2 className="font-bold text-gray-700 dark:text-white text-lg truncate">{userData?.displayName || user?.displayName}</h2>
+                   <button onClick={() => setIsEditing(true)} className="p-1 text-gray-400 hover:text-pink-500"><Edit2 size={14} /></button>
+                </div>
+              )}
+              {isStatusEditing ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="Set status..." className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-gray-600 dark:text-gray-300" />
+                  <button onClick={handleSaveStatus} className="p-1.5 bg-green-100 text-green-600 rounded-full"><Check size={12} /></button>
+                </div>
+              ) : (
+                <div onClick={() => setIsStatusEditing(true)} className="flex items-center gap-2 cursor-pointer mt-1 group">
+                   <p className={`text-xs truncate ${status ? 'text-pink-500 font-medium' : 'text-gray-400 italic'}`}>{status || "Set a status..."}</p>
+                   <Edit2 size={10} className="text-gray-300 opacity-0 group-hover:opacity-100" />
+                </div>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-w-0">
-            {isEditing ? (
-              <div className="flex items-center gap-2 mb-1">
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-gray-700 dark:text-white text-sm" autoFocus />
-                <button onClick={handleSaveName} className="p-1.5 bg-green-100 text-green-600 rounded-full"><Check size={14} /></button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                 <h2 className="font-bold text-gray-700 dark:text-white text-lg truncate">{userData?.displayName || user?.displayName}</h2>
-                 <button onClick={() => setIsEditing(true)} className="p-1 text-gray-400 hover:text-pink-500"><Edit2 size={14} /></button>
-              </div>
-            )}
-            {isStatusEditing ? (
-              <div className="flex items-center gap-2 mt-1">
-                <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="Set status..." className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-gray-600 dark:text-gray-300" />
-                <button onClick={handleSaveStatus} className="p-1.5 bg-green-100 text-green-600 rounded-full"><Check size={12} /></button>
-              </div>
-            ) : (
-              <div onClick={() => setIsStatusEditing(true)} className="flex items-center gap-2 cursor-pointer mt-1 group">
-                 <p className={`text-xs truncate ${status ? 'text-pink-500 font-medium' : 'text-gray-400 italic'}`}>{status || "Set a status..."}</p>
-                 <Edit2 size={10} className="text-gray-300 opacity-0 group-hover:opacity-100" />
-              </div>
-            )}
+
+          {/* BADGES SECTION (INSIDE PROFILE CARD) */}
+          <div className="border-t border-gray-100 dark:border-white/5 pt-4">
+             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Achievements</p>
+             <div className="flex flex-wrap gap-2">
+               {myBadges.map((badge, i) => (
+                 <div key={i} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-bold ${badge.color}`}>
+                   <span>{badge.icon}</span> {badge.label}
+                 </div>
+               ))}
+               {myBadges.length === 0 && <span className="text-xs text-gray-400 italic">No badges yet. Keep logging!</span>}
+             </div>
           </div>
         </div>
 
         <SettingSection title="Preferences">
-          {/* Note: Notifications Moved to Top Bar */}
           <SettingRow icon={isDarkMode ? Sun : Moon} label="Dark Mode" action={<Toggle active={isDarkMode} onClick={toggleTheme} />} />
         </SettingSection>
 

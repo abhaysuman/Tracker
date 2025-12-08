@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Copy, UserPlus, X, Check, Search, Zap, User, Trash2 } from 'lucide-react';
+import { ChevronLeft, UserPlus, X, Check, Search, Zap, User, Trash2, Paperclip } from 'lucide-react'; // Added Paperclip
 import { db } from './firebase';
-import { collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, doc, addDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, arrayUnion, doc, addDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
 
 export default function FriendsPage({ onNavigate, currentUser, userData, showToast }) {
   
@@ -10,7 +10,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
   const [friendInput, setFriendInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
-  
   const [requests, setRequests] = useState([]);
   const [friendsData, setFriendsData] = useState([]); 
 
@@ -51,30 +50,14 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
   const handleSendRequest = async () => {
     if (!friendInput.trim()) return;
-    if (friendInput.toUpperCase() === myCode) {
-      showToast("You can't add yourself! 😅");
-      return;
-    }
-
+    if (friendInput.toUpperCase() === myCode) { showToast("You can't add yourself!"); return; }
     setLoading(true);
     try {
       const q = query(collection(db, "users"), where("friendCode", "==", friendInput.toUpperCase().trim()));
       const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        showToast("User not found. Check the code!");
-        setLoading(false);
-        return;
-      }
-
+      if (querySnapshot.empty) { showToast("User not found."); setLoading(false); return; }
       const targetUserDoc = querySnapshot.docs[0];
-      
-      if (userData?.friends?.some(f => f.uid === targetUserDoc.id)) {
-        showToast("Already friends! ❤️");
-        setLoading(false);
-        return;
-      }
-
+      if (userData?.friends?.some(f => f.uid === targetUserDoc.id)) { showToast("Already friends!"); setLoading(false); return; }
       await addDoc(collection(db, "users", targetUserDoc.id, "requests"), {
         senderUid: currentUser.uid,
         senderName: userData.displayName || "Unknown",
@@ -82,30 +65,18 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
         senderPhoto: userData.photoURL || null,
         timestamp: new Date()
       });
-
-      showToast("Request Sent! 📩");
+      showToast("Request Sent!");
       setFriendInput("");
-    } catch (error) {
-      console.error(error);
-      showToast("Error sending request.");
-    }
+    } catch (error) { console.error(error); showToast("Error sending request."); }
     setLoading(false);
   };
 
   const handleAccept = async (req) => {
     try {
-      const myDocRef = doc(db, "users", currentUser.uid);
-      await updateDoc(myDocRef, {
-        friends: arrayUnion({ uid: req.senderUid, name: req.senderName })
-      });
-
-      const theirDocRef = doc(db, "users", req.senderUid);
-      await updateDoc(theirDocRef, {
-        friends: arrayUnion({ uid: currentUser.uid, name: userData.displayName })
-      });
-
+      await updateDoc(doc(db, "users", currentUser.uid), { friends: arrayUnion({ uid: req.senderUid, name: req.senderName }) });
+      await updateDoc(doc(db, "users", req.senderUid), { friends: arrayUnion({ uid: currentUser.uid, name: userData.displayName }) });
       await deleteDoc(doc(db, "users", currentUser.uid, "requests", req.id));
-      showToast(`You are now connected with ${req.senderName}! 🎉`);
+      showToast(`Connected with ${req.senderName}!`);
     } catch (e) { console.error(e); }
   };
 
@@ -114,24 +85,33 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     showToast("Request declined.");
   };
 
-  // --- NEW: REMOVE FRIEND FUNCTION ---
   const handleRemoveFriend = async (friendUid, friendName) => {
-    if (window.confirm(`Are you sure you want to remove ${friendName}?`)) {
+    if (window.confirm(`Remove ${friendName}?`)) {
       try {
-        const myDocRef = doc(db, "users", currentUser.uid);
-        
-        // We need to remove the object that has this UID
-        // Since arrayRemove requires the EXACT object, and our local object might have extra fields,
-        // we'll fetch the array, filter it, and save it back.
-        const currentFriends = userData.friends || [];
-        const newFriends = currentFriends.filter(f => f.uid !== friendUid);
-
-        await updateDoc(myDocRef, { friends: newFriends });
+        const newFriends = userData.friends.filter(f => f.uid !== friendUid);
+        await updateDoc(doc(db, "users", currentUser.uid), { friends: newFriends });
         showToast(`${friendName} removed.`);
-      } catch (e) {
-        console.error(e);
-        showToast("Error removing friend.");
-      }
+      } catch (e) { console.error(e); }
+    }
+  };
+
+  // --- NEW: SEND STICKY NOTE ---
+  const handleSendSticky = async (friendUid, friendName) => {
+    const note = prompt(`Write a short note for ${friendName}'s Home Screen:`);
+    if (!note) return;
+    
+    try {
+      await updateDoc(doc(db, "users", friendUid), {
+        stickyNote: {
+          message: note,
+          sender: userData.displayName || "A friend",
+          timestamp: new Date().toISOString()
+        }
+      });
+      showToast("Note Pinned to their Home! 📌");
+    } catch (e) {
+      console.error(e);
+      showToast("Failed to pin note.");
     }
   };
 
@@ -186,12 +166,7 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
         <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm">
           <h3 className="text-gray-600 dark:text-white font-bold mb-4">Find a Friend</h3>
           <div className="flex gap-2">
-            <input 
-              value={friendInput}
-              onChange={(e) => setFriendInput(e.target.value)}
-              placeholder="Enter ID (e.g. ABHA-9281)"
-              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 dark:text-white outline-none uppercase"
-            />
+            <input value={friendInput} onChange={(e) => setFriendInput(e.target.value)} placeholder="Enter ID (e.g. ABHA-9281)" className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 dark:text-white outline-none uppercase" />
             <button onClick={handleSendRequest} disabled={loading} className="bg-pink-400 hover:bg-pink-500 text-white p-3 rounded-xl shadow-md">
               {loading ? "..." : <Search size={24} />}
             </button>
@@ -213,23 +188,25 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-700 dark:text-white">{friend.displayName}</h4>
-                    {friend.status ? (
-                      <p className="text-xs text-pink-500 font-medium flex items-center gap-1">
-                        <Zap size={10} fill="currentColor"/> {friend.status}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-gray-400 italic">No status set</p>
-                    )}
+                    {friend.status ? <p className="text-xs text-pink-500 font-medium flex items-center gap-1"><Zap size={10} fill="currentColor"/> {friend.status}</p> : <p className="text-xs text-gray-400 italic">No status set</p>}
                   </div>
                 </div>
                 
-                {/* REMOVE FRIEND BUTTON */}
-                <button 
-                  onClick={() => handleRemoveFriend(friend.uid, friend.displayName)}
-                  className="p-2 text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <div className="flex gap-2">
+                  {/* STICKY NOTE BUTTON */}
+                  <button 
+                    onClick={() => handleSendSticky(friend.uid, friend.displayName)}
+                    className="p-2 text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 rounded-full transition-colors"
+                    title="Send Sticky Note"
+                  >
+                    <Paperclip size={18} />
+                  </button>
+                  
+                  {/* REMOVE BUTTON */}
+                  <button onClick={() => handleRemoveFriend(friend.uid, friend.displayName)} className="p-2 text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
