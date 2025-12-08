@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Trash2 } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import Waveform from './Waveform'; 
+import Waveform from './Waveform';
 
 export default function Messenger({ isOpen, onClose, activeChatFriend, user, friends = [], onStartCall, onJoinCall }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -25,6 +25,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const timerRef = useRef(null);
 
   // --- CLOUDINARY CONFIG ---
+  // Ensure no spaces!
   const CLOUD_NAME = "qbqrzy56"; 
   const UPLOAD_PRESET = "gf_mood_app"; 
 
@@ -133,20 +134,27 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
+        // Safety check: Empty recording?
+        if (audioBlob.size === 0) {
+            console.error("Empty audio blob");
+            setIsRecording(false);
+            setIsUploading(false);
+            return;
+        }
+
         // Stop tracks
         if (mediaRecorderRef.current.stream) {
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
         }
 
-        // --- ORIGINAL UPLOAD LOGIC ---
         const formData = new FormData();
         formData.append('file', audioBlob);
         formData.append('upload_preset', UPLOAD_PRESET);
-        formData.append('resource_type', 'auto'); // Let Cloudinary decide
+        // FIX: Remove 'resource_type' param and use '/auto/upload' in URL instead
 
         try {
-          // USE GENERIC /upload ENDPOINT (Best for Unsigned)
-          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
+          // USE '/auto/upload' URL -> This handles Audio/Video/Image automatically
+          const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME.trim()}/auto/upload`, {
             method: 'POST',
             body: formData
           });
@@ -228,6 +236,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               </div>
 
               <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-black/20">
+                {/* RECENT CHATS */}
                 {!activeChat && !showNewChat && (
                   <div className="p-2 space-y-1">
                     {recentChats.map(chat => (
@@ -238,6 +247,8 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     ))}
                   </div>
                 )}
+                
+                {/* NEW CHAT FRIENDS */}
                 {!activeChat && showNewChat && (
                   <div className="p-2 space-y-1">
                     {friends.map(friend => (
@@ -245,6 +256,8 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     ))}
                   </div>
                 )}
+
+                {/* MESSAGES */}
                 {activeChat && (
                   <div className="p-3 space-y-3 min-h-full flex flex-col justify-end">
                     {messages.map((msg, i) => {
@@ -260,7 +273,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                                <button onClick={() => { if (isMe) onStartCall && onStartCall(msg.text); else onJoinCall && onJoinCall(msg.text); }} className="block w-full text-center py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors text-xs">{isMe ? "Return to Call" : "Join Call"}</button>
                              </div>
                           ) : isAudio ? (
-                             <div className={`max-w-[85%]`}>
+                             <div className={`w-64 max-w-[85%]`}>
                                 <Waveform audioUrl={msg.text} isMe={isMe} />
                              </div>
                           ) : (
@@ -274,6 +287,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                 )}
               </div>
 
+              {/* INPUT AREA */}
               {activeChat && (
                 <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 shrink-0">
                   <AnimatePresence mode="wait">
