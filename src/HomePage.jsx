@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Smile, Frown, Meh, CloudRain, Sun, Zap, Heart, Flame } from 'lucide-react'; // Added Flame
-import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Added imports
+import { motion, AnimatePresence } from 'framer-motion'; // <--- FIXED THIS LINE
+import { Smile, Frown, Meh, CloudRain, Sun, Zap, Heart, Flame } from 'lucide-react';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
 export default function HomePage({ onNavigate, onSaveMood }) {
@@ -47,9 +47,14 @@ export default function HomePage({ onNavigate, onSaveMood }) {
           setStreak(newStreak);
           await updateDoc(userRef, { streak: newStreak, lastLoginDate: todayStr });
         } else {
-          // Streak broken
-          setStreak(1);
-          await updateDoc(userRef, { streak: 1, lastLoginDate: todayStr });
+          // Streak broken (or first login)
+          // Only reset if lastLogin was NOT today
+          if (lastDate !== todayStr) {
+             setStreak(1);
+             await updateDoc(userRef, { streak: 1, lastLoginDate: todayStr });
+          } else {
+             setStreak(currentStreak);
+          }
         }
       }
     };
