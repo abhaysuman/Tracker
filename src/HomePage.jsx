@@ -160,11 +160,11 @@ export default function HomePage({ onNavigate, onSaveMood }) {
       </motion.div>
 
       <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md rounded-full shadow-lg border border-white/50 dark:border-white/10 px-6 py-4 flex justify-between items-center z-40 transition-colors duration-300">
-        <NavIcon icon={<Zap size={20} />} active onClick={() => onNavigate('home')} />
-        <NavIcon icon={<CloudRain size={20} />} onClick={() => onNavigate('history')} />
-        <NavIcon icon={<Sun size={20} />} onClick={() => onNavigate('calendar')} />
-        <NavIcon icon={<Meh size={20} />} onClick={() => onNavigate('insights')} />
-        <NavIcon icon={<Smile size={20} />} onClick={() => onNavigate('surprise')} />
+        <NavIcon icon={<Home size={20} />} onClick={() => onNavigate('home')} />
+        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
+        <NavIcon icon={<Calendar size={20} />} onClick={() => onNavigate('calendar')} />
+        <NavIcon icon={<BarChart2 size={20} />} active onClick={() => onNavigate('insights')} />
+        <NavIcon icon={<Gift size={20} />} onClick={() => onNavigate('surprise')} />
       </div>
 
     </div>
