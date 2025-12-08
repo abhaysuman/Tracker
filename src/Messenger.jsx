@@ -27,6 +27,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   // --- CLOUDINARY CONFIG ---
   const CLOUD_NAME = "qbqrzy56"; 
   const UPLOAD_PRESET = "gf_mood_app"; 
+  const API_KEY = "282875156328147"; // <--- ⚠️ PASTE YOUR API KEY HERE!
 
   useEffect(() => {
     if (activeChatFriend) {
@@ -133,7 +134,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
-        // Stop tracks
         if (mediaRecorderRef.current.stream) {
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
         }
@@ -141,10 +141,10 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         const formData = new FormData();
         formData.append('file', audioBlob);
         formData.append('upload_preset', UPLOAD_PRESET);
-        // REMOVED 'resource_type' param to fix "Unknown API Key" error
+        // ADDING API KEY HERE TO FIX THE ERROR
+        formData.append('api_key', API_KEY); 
 
         try {
-          // REVERTED to generic /upload (Works best for Unsigned)
           const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
             method: 'POST',
             body: formData
@@ -227,7 +227,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               </div>
 
               <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-black/20">
-                {/* RECENT CHATS */}
                 {!activeChat && !showNewChat && (
                   <div className="p-2 space-y-1">
                     {recentChats.map(chat => (
@@ -238,8 +237,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     ))}
                   </div>
                 )}
-                
-                {/* NEW CHAT FRIENDS */}
                 {!activeChat && showNewChat && (
                   <div className="p-2 space-y-1">
                     {friends.map(friend => (
@@ -247,8 +244,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     ))}
                   </div>
                 )}
-
-                {/* MESSAGES */}
                 {activeChat && (
                   <div className="p-3 space-y-3 min-h-full flex flex-col justify-end">
                     {messages.map((msg, i) => {
@@ -278,7 +273,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                 )}
               </div>
 
-              {/* INPUT AREA */}
               {activeChat && (
                 <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 shrink-0">
                   <AnimatePresence mode="wait">
