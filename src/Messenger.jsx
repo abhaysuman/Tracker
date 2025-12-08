@@ -13,12 +13,12 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
   const [inputText, setInputText] = useState("");
   const [recentChats, setRecentChats] = useState([]);
   
-  // EDIT & MENU
+  // EDIT & MENU STATES
   const [editingMsgId, setEditingMsgId] = useState(null);
   const [editText, setEditText] = useState("");
   const [showChatMenu, setShowChatMenu] = useState(false);
 
-  // RECORDING
+  // RECORDING STATE
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -29,9 +29,10 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
 
-  // CONFIG - Using simple upload
+  // --- CLOUDINARY CONFIG (UPDATED) ---
   const CLOUD_NAME = "qbqrzy56"; 
   const UPLOAD_PRESET = "gf_mood_app"; 
+  const API_KEY = "282875156328147"; // <--- ADDED YOUR API KEY HERE
 
   useEffect(() => {
     if (activeChatFriend) {
@@ -41,7 +42,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
     }
   }, [activeChatFriend]);
 
-  // 1. RECENT CHATS
+  // 1. FETCH RECENT CHATS
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
@@ -63,7 +64,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
     return () => unsubscribe();
   }, [user, userData]);
 
-  // 2. MESSAGES
+  // 2. FETCH MESSAGES
   useEffect(() => {
     if (!activeChat || !user) return;
     const chatId = [user.uid, activeChat.uid].sort().join("_");
@@ -139,7 +140,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
     setInputText("");
   };
 
-  // --- RECORDING ---
+  // --- AUDIO RECORDING ---
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -156,6 +157,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
   const stopAndSendAudio = () => {
     if (!mediaRecorderRef.current) return;
     setIsUploading(true); clearInterval(timerRef.current); setRecordingStream(null); 
+    
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         if (mediaRecorderRef.current.stream) mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
@@ -163,14 +165,21 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
         const formData = new FormData(); 
         formData.append('file', audioBlob); 
         formData.append('upload_preset', UPLOAD_PRESET);
-        
-        // SIMPLE UPLOAD LOGIC (No resource_type, no API key)
+        formData.append('api_key', API_KEY); // <--- ADDED API KEY TO REQUEST
+
         try {
           const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, { method: 'POST', body: formData });
           const data = await res.json();
-          if (data.secure_url) await sendToFirebase(data.secure_url, 'audio');
-          else if (data.error) alert(data.error.message);
-        } catch (e) { console.error(e); }
+          
+          if (data.error) {
+             console.error("Cloudinary Error:", data.error.message);
+             alert("Upload failed: " + data.error.message);
+          } else if (data.secure_url) {
+             await sendToFirebase(data.secure_url, 'audio');
+          }
+        } catch (e) { 
+            console.error("Network upload failed", e); 
+        }
         
         setIsRecording(false); setIsUploading(false);
     };
