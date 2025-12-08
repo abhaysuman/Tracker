@@ -143,3 +143,15 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
         </SettingSection>
 
         <SettingSection title="Support">
+           <SettingRow icon={MessageSquare} label="Send Feedback" onClick={() => setShowFeedback(true)} action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} />
+        </SettingSection>
+
+        <button onClick={onLogout} className="w-full bg-white dark:bg-midnight-card rounded-2xl p-4 text-red-400 font-bold flex items-center justify-center gap-2 shadow-sm mt-4 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
+          <LogOut size={18} /> Log Out
+        </button>
+      </motion.div>
+
+      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} user={user} />
+    </div>
+  );
+}
