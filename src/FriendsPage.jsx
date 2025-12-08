@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, UserPlus, X, Check, Search, Zap, User, Trash2, Paperclip } from 'lucide-react'; // Added Paperclip
+import { ChevronLeft, UserPlus, X, Check, Search, Zap, User, Trash2, Paperclip } from 'lucide-react';
 import { db } from './firebase';
 import { collection, query, where, getDocs, updateDoc, arrayUnion, doc, addDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
 
-export default function FriendsPage({ onNavigate, currentUser, userData, showToast }) {
+// NEW PROP: onViewProfile added here
+export default function FriendsPage({ onNavigate, currentUser, userData, showToast, onViewProfile }) {
   
   const myCode = userData?.friendCode || "Loading...";
   const [friendInput, setFriendInput] = useState('');
@@ -85,7 +86,8 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     showToast("Request declined.");
   };
 
-  const handleRemoveFriend = async (friendUid, friendName) => {
+  const handleRemoveFriend = async (e, friendUid, friendName) => {
+    e.stopPropagation(); // Stop clicking the card from opening profile
     if (window.confirm(`Remove ${friendName}?`)) {
       try {
         const newFriends = userData.friends.filter(f => f.uid !== friendUid);
@@ -95,11 +97,10 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     }
   };
 
-  // --- NEW: SEND STICKY NOTE ---
-  const handleSendSticky = async (friendUid, friendName) => {
+  const handleSendSticky = async (e, friendUid, friendName) => {
+    e.stopPropagation(); // Stop clicking the card from opening profile
     const note = prompt(`Write a short note for ${friendName}'s Home Screen:`);
     if (!note) return;
-    
     try {
       await updateDoc(doc(db, "users", friendUid), {
         stickyNote: {
@@ -108,7 +109,7 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
           timestamp: new Date().toISOString()
         }
       });
-      showToast("Note Pinned to their Home! 📌");
+      showToast("Note Pinned! 📌");
     } catch (e) {
       console.error(e);
       showToast("Failed to pin note.");
@@ -180,7 +181,8 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
               <motion.div 
                 key={friend.uid}
                 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm flex items-center justify-between"
+                onClick={() => onViewProfile(friend.uid)} // <--- CLICK TO OPEN PROFILE
+                className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-full bg-pink-100 dark:bg-pink-900/20 overflow-hidden border-2 border-white dark:border-white/10">
@@ -193,17 +195,10 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
                 </div>
                 
                 <div className="flex gap-2">
-                  {/* STICKY NOTE BUTTON */}
-                  <button 
-                    onClick={() => handleSendSticky(friend.uid, friend.displayName)}
-                    className="p-2 text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 rounded-full transition-colors"
-                    title="Send Sticky Note"
-                  >
+                  <button onClick={(e) => handleSendSticky(e, friend.uid, friend.displayName)} className="p-2 text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 rounded-full transition-colors" title="Send Sticky Note">
                     <Paperclip size={18} />
                   </button>
-                  
-                  {/* REMOVE BUTTON */}
-                  <button onClick={() => handleRemoveFriend(friend.uid, friend.displayName)} className="p-2 text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors">
+                  <button onClick={(e) => handleRemoveFriend(e, friend.uid, friend.displayName)} className="p-2 text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors">
                     <Trash2 size={18} />
                   </button>
                 </div>
