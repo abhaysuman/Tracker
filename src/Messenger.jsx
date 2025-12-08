@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, ChevronDown, Minimize2, ChevronLeft, Plus, Search } from 'lucide-react';
+import { MessageCircle, X, Send, ChevronDown, Minimize2, ChevronLeft, Plus, Search, Video } from 'lucide-react'; // Added Video
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -21,7 +21,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     }
   }, [activeChatFriend]);
 
-  // 1. FETCH RECENT CHATS LIST (Sorting done in app to avoid Index error)
+  // 1. FETCH RECENT CHATS LIST
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
@@ -51,11 +51,24 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     return () => unsubscribe();
   }, [activeChat, user]);
 
-  // 3. SEND MESSAGE
+  // 3. SEND TEXT MESSAGE
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || !activeChat) return;
+    await sendToFirebase(inputText, 'text');
+    setInputText("");
+  };
 
+  // 4. START VIDEO CALL
+  const startVideoCall = async () => {
+    if (!activeChat) return;
+    const roomId = `gf-mood-${user.uid}-${Date.now()}`; // Unique Room ID
+    const callUrl = `https://meet.jit.si/${roomId}`;
+    await sendToFirebase(callUrl, 'call');
+  };
+
+  // Helper to save to Firestore
+  const sendToFirebase = async (content, type) => {
     const chatId = [user.uid, activeChat.uid].sort().join("_");
     const chatRef = doc(db, "chats", chatId);
 
@@ -65,17 +78,16 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         { uid: user.uid, name: user.displayName, avatar: user.photoURL },
         { uid: activeChat.uid, name: activeChat.name || activeChat.displayName, avatar: activeChat.avatar || activeChat.photoURL }
       ],
-      lastMessage: inputText,
+      lastMessage: type === 'call' ? '🎥 Video Call started' : content,
       lastUpdated: serverTimestamp()
     }, { merge: true });
 
     await addDoc(collection(db, "chats", chatId, "messages"), {
-      text: inputText,
+      text: content,
+      type: type, // 'text' or 'call'
       senderId: user.uid,
       createdAt: serverTimestamp()
     });
-
-    setInputText("");
   };
 
   const startNewChat = (friend) => {
@@ -89,7 +101,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     <div className="fixed bottom-0 right-4 z-[100] flex flex-col items-end pointer-events-none">
       <div className="pointer-events-auto">
         
-        {/* --- MAIN MESSENGER WINDOW (w-80 width) --- */}
+        {/* --- MAIN MESSENGER WINDOW (w-80) --- */}
         <AnimatePresence>
           {isExpanded && (
             <motion.div 
@@ -97,19 +109,18 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               animate={{ y: 0, opacity: 1 }} 
               exit={{ y: 400, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              // KEEPING w-80 HERE
               className="w-80 h-96 bg-white dark:bg-midnight-card rounded-t-2xl shadow-2xl border border-gray-200 dark:border-white/10 flex flex-col overflow-hidden"
             >
               
               {/* HEADER */}
               <div className="bg-pink-500 p-3 flex justify-between items-center text-white shadow-md z-10">
                 {activeChat ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 max-w-[60%]">
                     <button onClick={() => setActiveChat(null)} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button>
-                    <div className="w-7 h-7 rounded-full bg-white/20 overflow-hidden border border-white/50">
+                    <div className="w-7 h-7 rounded-full bg-white/20 overflow-hidden border border-white/50 shrink-0">
                        <img src={activeChat.avatar || activeChat.photoURL} className="w-full h-full object-cover" />
                     </div>
-                    <span className="font-bold text-sm truncate max-w-[120px]">{activeChat.name || activeChat.displayName}</span>
+                    <span className="font-bold text-sm truncate">{activeChat.name || activeChat.displayName}</span>
                   </div>
                 ) : showNewChat ? (
                   <div className="flex items-center gap-2">
@@ -120,7 +131,14 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                   <span className="font-bold text-lg tracking-tight">Messages</span>
                 )}
                 
-                <div className="flex gap-1">
+                <div className="flex gap-1 items-center">
+                  {/* VIDEO CALL BUTTON (Only inside Active Chat) */}
+                  {activeChat && (
+                    <button onClick={startVideoCall} className="p-1.5 hover:bg-white/20 rounded-full" title="Video Call">
+                      <Video size={20} />
+                    </button>
+                  )}
+
                   {!activeChat && !showNewChat && (
                     <button onClick={() => setShowNewChat(true)} className="p-1.5 hover:bg-white/20 rounded-full" title="Start New Chat">
                       <Plus size={20} />
@@ -160,7 +178,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                   </div>
                 )}
 
-                {/* VIEW 2: NEW CHAT (FRIEND LIST) */}
+                {/* VIEW 2: NEW CHAT */}
                 {!activeChat && showNewChat && (
                   <div className="p-2 space-y-1">
                     <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Select a Friend</div>
@@ -185,11 +203,32 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     {messages.length === 0 && <p className="text-center text-xs text-gray-400 my-4">Say hi to {activeChat.name} 👋</p>}
                     {messages.map((msg, i) => {
                       const isMe = msg.senderId === user.uid;
+                      const isCall = msg.type === 'call';
+
                       return (
                         <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[80%] px-3 py-2 text-sm ${isMe ? 'bg-pink-500 text-white rounded-2xl rounded-tr-none' : 'bg-white dark:bg-white/10 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm'}`}>
-                            {msg.text}
-                          </div>
+                          {isCall ? (
+                             // VIDEO CALL CARD
+                             <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${isMe ? 'bg-pink-100 border border-pink-200' : 'bg-white border border-gray-100 shadow-sm'}`}>
+                               <div className="flex items-center gap-2 mb-2">
+                                 <div className="p-2 bg-pink-500 rounded-full text-white"><Video size={16} /></div>
+                                 <span className="font-bold text-gray-700">Video Call</span>
+                               </div>
+                               <a 
+                                 href={msg.text} 
+                                 target="_blank" 
+                                 rel="noreferrer"
+                                 className="block w-full text-center py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors text-xs"
+                               >
+                                 Join Call
+                               </a>
+                             </div>
+                          ) : (
+                             // STANDARD TEXT BUBBLE
+                             <div className={`max-w-[80%] px-3 py-2 text-sm ${isMe ? 'bg-pink-500 text-white rounded-2xl rounded-tr-none' : 'bg-white dark:bg-white/10 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm'}`}>
+                               {msg.text}
+                             </div>
+                          )}
                         </div>
                       );
                     })}
@@ -218,14 +257,13 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
           )}
         </AnimatePresence>
         
-        {/* --- FLOATING TOGGLE BUTTON (UPDATED WIDTH) --- */}
+        {/* --- FLOATING TOGGLE BUTTON --- */}
         {!isExpanded && (
           <motion.button 
             initial={{ scale: 0 }} animate={{ scale: 1 }}
             onClick={() => setIsExpanded(true)}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            // ADDED 'w-80' and 'justify-between' here:
             className="w-80 bg-white dark:bg-midnight-card text-gray-700 dark:text-white p-3 rounded-t-xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] flex items-center justify-between border border-b-0 border-gray-100 dark:border-white/10 cursor-pointer"
           >
             <div className="flex items-center gap-2">
