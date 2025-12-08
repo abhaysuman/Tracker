@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Smile, Heart, Flame, Home, Calendar, BarChart2, History, Gift, Camera, X, Paperclip } from 'lucide-react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
-// REMOVED: import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth } from './firebase'; // REMOVED storage import
+import { db, auth } from './firebase';
 
 export default function HomePage({ onNavigate, onSaveMood }) {
   const [selectedMood, setSelectedMood] = useState(null);
@@ -17,9 +16,9 @@ export default function HomePage({ onNavigate, onSaveMood }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  // --- CLOUDINARY CONFIG ---
-  const CLOUD_NAME = "dqbqrzy56"; // <--- 1. PASTE YOUR CLOUD NAME
-  const UPLOAD_PRESET = "gf_mood_app"; // <--- 2. PASTE YOUR UNSIGNED PRESET NAME
+  // --- CLOUDINARY CONFIG (FIXED) ---
+  const CLOUD_NAME = "qbqrzy56"; // <--- UPDATED!
+  const UPLOAD_PRESET = "gf_mood_app";
 
   const moods = [
     { emoji: '😍', label: 'Amazing', color: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-300' },
@@ -45,9 +44,8 @@ export default function HomePage({ onNavigate, onSaveMood }) {
         const currentStreak = data.streak || 0;
         const today = new Date().toISOString().split('T')[0];
         
-        // Simple streak logic (check only today vs last login)
         if (lastDate !== today) {
-           // ... (Same streak logic as before)
+           // Streak logic handled in App level usually, but purely display here
         }
         setStreak(currentStreak);
       }
@@ -93,10 +91,17 @@ export default function HomePage({ onNavigate, onSaveMood }) {
           body: formData
         });
         const data = await res.json();
-        photoURL = data.secure_url; // Cloudinary returns the web URL
+        if (data.error) {
+            alert("Upload Error: " + data.error.message);
+            setUploading(false);
+            return;
+        }
+        photoURL = data.secure_url; 
       } catch (e) {
         console.error("Upload failed", e);
         alert("Photo failed to upload.");
+        setUploading(false);
+        return;
       }
     }
 

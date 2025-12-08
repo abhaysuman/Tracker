@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore'; 
 import { updateProfile } from 'firebase/auth';
-// REMOVED: import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth } from './firebase'; // REMOVED storage import
+import { db, auth } from './firebase';
 import FeedbackModal from './FeedbackModal';
 
 export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout, user, userData }) {
@@ -18,18 +17,16 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
   
   const fileInputRef = useRef(null);
 
-  // --- CLOUDINARY CONFIG ---
-  const CLOUD_NAME = "dqbqrzy56"; // <--- 1. PASTE YOUR CLOUD NAME HERE
-  const UPLOAD_PRESET = "gf_mood_app";        // <--- 2. SAME PRESET AS BEFORE
+  // --- CLOUDINARY CONFIG (FIXED) ---
+  const CLOUD_NAME = "qbqrzy56"; // <--- UPDATED!
+  const UPLOAD_PRESET = "gf_mood_app";
 
-  // --- HANDLE PHOTO UPLOAD (VIA CLOUDINARY) ---
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploadingImg(true);
     try {
-      // 1. Upload to Cloudinary
       const formData = new FormData();
       formData.append('file', file);
       formData.append('upload_preset', UPLOAD_PRESET);
@@ -39,21 +36,19 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
         body: formData
       });
       const data = await res.json();
-      const downloadURL = data.secure_url; // Cloudinary URL
+      
+      if (data.error) throw new Error(data.error.message);
+      
+      const downloadURL = data.secure_url;
 
-      if (!downloadURL) throw new Error("Upload failed");
-
-      // 2. Update Firebase Auth Profile
       await updateProfile(auth.currentUser, { photoURL: downloadURL });
-
-      // 3. Update Firestore Database
       const userDocRef = doc(db, "users", user.uid);
       await updateDoc(userDocRef, { photoURL: downloadURL });
 
       alert("Profile photo updated! 📸");
     } catch (error) {
       console.error("Error uploading image:", error);
-      alert("Failed to upload image.");
+      alert("Failed to upload image: " + error.message);
     }
     setUploadingImg(false);
   };
