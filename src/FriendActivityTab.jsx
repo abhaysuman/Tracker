@@ -1,13 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, ChevronRight, ChevronLeft, MessageCircle, Zap } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { Bell, ChevronRight, ChevronLeft, MessageCircle, Zap, Heart } from 'lucide-react';
+import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore'; // Added imports
+import { db, auth } from './firebase';
 
 export default function FriendActivityTab({ friends = [] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [updates, setUpdates] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // --- SEND HUG FUNCTION ---
+  const sendHug = async (friendUid, friendName) => {
+    try {
+      // Add to THAT friend's notification sub-collection
+      await addDoc(collection(db, "users", friendUid, "notifications"), {
+        type: 'hug',
+        message: 'sent you a virtual hug! 🫂',
+        senderUid: auth.currentUser.uid,
+        senderName: auth.currentUser.displayName || "Someone",
+        timestamp: serverTimestamp(),
+        read: false
+      });
+      alert(`Hug sent to ${friendName}! ❤️`);
+    } catch (error) {
+      console.error("Error sending hug:", error);
+      alert("Failed to send hug.");
+    }
+  };
 
   useEffect(() => {
     const fetchUpdates = async () => {
@@ -22,9 +41,7 @@ export default function FriendActivityTab({ friends = [] }) {
           
           if (friendSnap.exists()) {
             const data = friendSnap.data();
-            
-            // --- PRIVACY CHECK ---
-            if (data.isPrivate) continue; // Skip if private mode is ON
+            if (data.isPrivate) continue;
 
             const history = data.history || {};
             const dates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
@@ -37,7 +54,7 @@ export default function FriendActivityTab({ friends = [] }) {
                 uid: friend.uid,
                 name: data.displayName || friend.name,
                 avatar: data.photoURL || friend.avatar,
-                status: data.status || "", // <--- Fetch Status
+                status: data.status || "",
                 mood: latestMood.emoji,
                 label: latestMood.label,
                 note: latestMood.note,
@@ -92,19 +109,27 @@ export default function FriendActivityTab({ friends = [] }) {
         <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-hide">
           {loading ? <div className="text-center text-gray-400 mt-10">Checking statuses...</div> : updates.length === 0 ? <div className="text-center mt-10 opacity-60"><div className="text-4xl mb-2">😴</div><p className="text-sm text-gray-500">No updates yet.</p></div> : (
             updates.map((update, idx) => (
-              <motion.div key={`${update.uid}-${idx}`} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: idx * 0.1 }} className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm border border-gray-50 dark:border-white/5">
+              <motion.div key={`${update.uid}-${idx}`} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: idx * 0.1 }} className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm border border-gray-50 dark:border-white/5 relative">
+                
+                {/* Send Hug Button */}
+                <button 
+                  onClick={() => sendHug(update.uid, update.name)}
+                  className="absolute top-4 right-4 text-pink-300 hover:text-pink-500 hover:scale-110 transition-all p-2 bg-pink-50 dark:bg-pink-900/20 rounded-full"
+                  title="Send Hug"
+                >
+                  <Heart size={16} fill="currentColor" />
+                </button>
+
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
                     {update.avatar ? <img src={update.avatar} className="w-full h-full object-cover" /> : update.name[0]}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 pr-8">
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="font-bold text-gray-700 dark:text-white text-sm truncate">{update.name}</h4>
-                        {/* STATUS DISPLAY */}
                         {update.status && <p className="text-[10px] text-pink-500 font-medium flex items-center gap-1"><Zap size={8} /> {update.status}</p>}
                       </div>
-                      <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">{update.time}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-2xl">{update.mood}</span>
@@ -115,6 +140,7 @@ export default function FriendActivityTab({ friends = [] }) {
                         <MessageCircle size={10} className="absolute -top-1 -right-1 text-pink-300" />"{update.note}"
                       </div>
                     )}
+                    <span className="text-[10px] text-gray-300 block mt-2 text-right">{update.time}</span>
                   </div>
                 </div>
               </motion.div>

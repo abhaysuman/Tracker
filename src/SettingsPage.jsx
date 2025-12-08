@@ -1,25 +1,39 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, Bell, Lock, User, LogOut, Moon, Sun, Heart, Edit2, Check, X, Camera, MessageSquare, Zap } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { ChevronLeft, Bell, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
+import { doc, updateDoc, collection, onSnapshot, query, where } from 'firebase/firestore'; // <--- Added imports
 import { updateProfile } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, auth, storage } from './firebase';
-import FeedbackModal from './FeedbackModal'; // <--- Import Feedback
+import FeedbackModal from './FeedbackModal';
+import NotificationsModal from './NotificationsModal'; // <--- Import Notification Modal
 
 export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout, user, userData }) {
   
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState(userData?.displayName || user?.displayName || "My Love");
-  const [status, setStatus] = useState(userData?.status || ""); // <--- User Status
+  const [status, setStatus] = useState(userData?.status || "");
   const [isStatusEditing, setIsStatusEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
-  const [showFeedback, setShowFeedback] = useState(false); // <--- Feedback State
+  const [showFeedback, setShowFeedback] = useState(false);
   
+  // NOTIFICATIONS STATE
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const fileInputRef = useRef(null);
 
-  // --- PHOTO UPLOAD ---
+  // --- LISTEN FOR UNREAD NOTIFICATIONS ---
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "users", user.uid, "notifications"));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setUnreadCount(snap.size);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // ... (Keep handleImageUpload, handleSaveName, handleSaveStatus, togglePrivacy exactly as they were) ...
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -32,58 +46,48 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
       const userDocRef = doc(db, "users", user.uid);
       await updateDoc(userDocRef, { photoURL: downloadURL });
       alert("Profile photo updated! 📸");
-    } catch (error) {
-      console.error("Error uploading image:", error);
-    }
+    } catch (error) { console.error(error); }
     setUploadingImg(false);
   };
 
-  // --- SAVE NAME ---
   const handleSaveName = async () => {
     if (!newName.trim()) return;
-    setLoading(true);
     try {
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, { displayName: newName });
       setIsEditing(false);
     } catch (error) { console.error(error); }
-    setLoading(false);
   };
 
-  // --- SAVE STATUS ---
   const handleSaveStatus = async () => {
-    setLoading(true);
     try {
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, { status: status });
       setIsStatusEditing(false);
     } catch (error) { console.error(error); }
-    setLoading(false);
   };
 
-  // --- TOGGLE PRIVACY ---
   const togglePrivacy = async () => {
-    const currentPrivacy = userData?.isPrivate || false;
     try {
       const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, { isPrivate: !currentPrivacy });
+      await updateDoc(userRef, { isPrivate: !userData?.isPrivate });
     } catch (error) { console.error(error); }
   };
 
+  // ... (Keep UI Components: SettingSection, SettingRow, Toggle) ...
   const SettingSection = ({ title, children }) => (
     <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm mb-4 transition-colors duration-300">
       <h3 className="text-gray-400 dark:text-gray-500 font-bold text-xs uppercase tracking-wider mb-4">{title}</h3>
-      <div className="space-y-4">
-        {children}
-      </div>
+      <div className="space-y-4">{children}</div>
     </div>
   );
 
-  const SettingRow = ({ icon: Icon, label, action, onClick }) => (
+  const SettingRow = ({ icon: Icon, label, action, onClick, badge }) => (
     <div className="flex items-center justify-between cursor-pointer" onClick={onClick}>
       <div className="flex items-center gap-3 text-gray-700 dark:text-gray-200">
-        <div className="p-2 bg-pink-50 dark:bg-pink-900/30 text-pink-400 rounded-full">
+        <div className="p-2 bg-pink-50 dark:bg-pink-900/30 text-pink-400 rounded-full relative">
           <Icon size={18} />
+          {badge > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-midnight-card"></span>}
         </div>
         <span className="font-medium text-sm">{label}</span>
       </div>
@@ -92,18 +96,13 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
   );
 
   const Toggle = ({ active, onClick }) => (
-    <div 
-      onClick={(e) => { e.stopPropagation(); onClick && onClick(); }}
-      className={`w-10 h-6 rounded-full relative cursor-pointer transition-colors duration-300 ${active ? 'bg-pink-400' : 'bg-pink-200 dark:bg-gray-600'}`}
-    >
+    <div onClick={(e) => { e.stopPropagation(); onClick && onClick(); }} className={`w-10 h-6 rounded-full relative cursor-pointer transition-colors duration-300 ${active ? 'bg-pink-400' : 'bg-pink-200 dark:bg-gray-600'}`}>
       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${active ? 'right-1' : 'left-1'}`} />
     </div>
   );
 
   return (
     <div className="min-h-screen bg-[#EBD4F4] dark:bg-midnight-bg pb-10 font-sans selection:bg-pink-200 transition-colors duration-300 relative">
-      
-      {/* Header */}
       <div className="pt-8 px-6 pb-6 flex items-center justify-between sticky top-0 z-10 bg-[#EBD4F4]/90 dark:bg-midnight-bg/90 backdrop-blur-sm transition-colors duration-300">
         <button onClick={() => onNavigate('home')} className="p-3 bg-white dark:bg-midnight-card rounded-full text-gray-600 dark:text-gray-200 shadow-sm hover:scale-105 transition-all">
           <ChevronLeft size={24} />
@@ -123,9 +122,7 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
             </div>
             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
           </div>
-
           <div className="flex-1 min-w-0">
-            {/* NAME EDIT */}
             {isEditing ? (
               <div className="flex items-center gap-2 mb-1">
                 <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-gray-700 dark:text-white text-sm" autoFocus />
@@ -137,8 +134,6 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
                  <button onClick={() => setIsEditing(true)} className="p-1 text-gray-400 hover:text-pink-500"><Edit2 size={14} /></button>
               </div>
             )}
-            
-            {/* STATUS EDIT */}
             {isStatusEditing ? (
               <div className="flex items-center gap-2 mt-1">
                 <input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="Set status..." className="w-full bg-gray-50 dark:bg-black/20 border border-pink-200 dark:border-white/10 rounded-lg px-2 py-1 text-xs text-gray-600 dark:text-gray-300" />
@@ -146,9 +141,7 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
               </div>
             ) : (
               <div onClick={() => setIsStatusEditing(true)} className="flex items-center gap-2 cursor-pointer mt-1 group">
-                 <p className={`text-xs truncate ${status ? 'text-pink-500 font-medium' : 'text-gray-400 italic'}`}>
-                   {status || "Set a status..."}
-                 </p>
+                 <p className={`text-xs truncate ${status ? 'text-pink-500 font-medium' : 'text-gray-400 italic'}`}>{status || "Set a status..."}</p>
                  <Edit2 size={10} className="text-gray-300 opacity-0 group-hover:opacity-100" />
               </div>
             )}
@@ -156,36 +149,33 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
         </div>
 
         <SettingSection title="Preferences">
-          <SettingRow icon={Bell} label="Notifications" action={<Toggle />} />
+          {/* UPDATED NOTIFICATION ROW */}
+          <SettingRow 
+             icon={Bell} 
+             label="Notifications" 
+             badge={unreadCount}
+             onClick={() => setShowNotifs(true)}
+             action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} 
+          />
           <SettingRow icon={isDarkMode ? Sun : Moon} label="Dark Mode" action={<Toggle active={isDarkMode} onClick={toggleTheme} />} />
         </SettingSection>
 
         <SettingSection title="Privacy & Security">
-          <SettingRow 
-            icon={Lock} 
-            label="Privacy Mode" 
-            action={<Toggle active={userData?.isPrivate} onClick={togglePrivacy} />} 
-          />
+          <SettingRow icon={Lock} label="Privacy Mode" action={<Toggle active={userData?.isPrivate} onClick={togglePrivacy} />} />
           <SettingRow icon={User} label="Friend List" action={<span className="text-xs text-gray-400">{userData?.friends?.length || 0} Friends</span>} />
         </SettingSection>
 
         <SettingSection title="Support">
-           <SettingRow 
-             icon={MessageSquare} 
-             label="Send Feedback" 
-             onClick={() => setShowFeedback(true)}
-             action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} 
-           />
+           <SettingRow icon={MessageSquare} label="Send Feedback" onClick={() => setShowFeedback(true)} action={<div className="bg-gray-100 dark:bg-white/10 p-1 rounded-full"><ChevronLeft size={16} className="rotate-180" /></div>} />
         </SettingSection>
 
         <button onClick={onLogout} className="w-full bg-white dark:bg-midnight-card rounded-2xl p-4 text-red-400 font-bold flex items-center justify-center gap-2 shadow-sm mt-4 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors">
           <LogOut size={18} /> Log Out
         </button>
-
-        <p className="text-center text-gray-400 dark:text-gray-600 text-xs mt-8">GF Mood Tracker v1.4 <br/> Made with ❤️</p>
       </motion.div>
 
       <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} user={user} />
+      <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
     </div>
   );
 }
