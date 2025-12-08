@@ -1,19 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Home, History, Calendar, BarChart2, Gift, Copy, UserPlus, X, Check, ChevronLeft } from 'lucide-react';
-// FIREBASE
-import { db } from './firebase';
-import { collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, doc } from 'firebase/firestore';
+import { ChevronLeft, Copy, UserPlus, X, Check, Search, Zap, User } from 'lucide-react';
+import { db, auth } from './firebase';
+import { collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, doc, addDoc, onSnapshot, getDoc, deleteDoc, setDoc } from 'firebase/firestore';
 
 export default function FriendsPage({ onNavigate, currentUser, userData, showToast }) {
   
-  // Use REAL data from App.jsx, or fallback while loading
   const myCode = userData?.friendCode || "Loading...";
-  const myFriends = userData?.friends || []; // List of friends from DB
-
   const [friendInput, setFriendInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  const [requests, setRequests] = useState([]);
+  const [friendsData, setFriendsData] = useState([]); // Store live friend data (status/avatar)
+
+  // --- 1. LISTEN FOR FRIEND REQUESTS ---
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, "users", currentUser.uid, "requests"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // --- 2. FETCH LIVE FRIEND DATA (For Status) ---
+  useEffect(() => {
+    const fetchFriendsLive = async () => {
+      if (!userData?.friends || userData.friends.length === 0) {
+        setFriendsData([]);
+        return;
+      }
+      const liveData = [];
+      for (const friend of userData.friends) {
+        try {
+          const docSnap = await getDoc(doc(db, "users", friend.uid));
+          if (docSnap.exists()) {
+            liveData.push({ uid: friend.uid, ...docSnap.data() });
+          }
+        } catch (e) { console.error(e); }
+      }
+      setFriendsData(liveData);
+    };
+    fetchFriendsLive();
+  }, [userData]); // Re-run if friend list changes
 
   const handleCopy = () => {
     navigator.clipboard.writeText(myCode);
@@ -21,9 +51,9 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- REAL FRIEND ADDING LOGIC ---
-  const handleAddFriend = async () => {
-    if (friendInput.trim() === "") return;
+  // --- SEND REQUEST ---
+  const handleSendRequest = async () => {
+    if (!friendInput.trim()) return;
     if (friendInput.toUpperCase() === myCode) {
       showToast("You can't add yourself! 😅");
       return;
@@ -31,8 +61,8 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
     setLoading(true);
     try {
-      // 1. Search for user with this code
-      const q = query(collection(db, "users"), where("friendCode", "==", friendInput.toUpperCase()));
+      // 1. Find User
+      const q = query(collection(db, "users"), where("friendCode", "==", friendInput.toUpperCase().trim()));
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
@@ -41,50 +71,62 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
         return;
       }
 
-      // 2. Found them! Get their data
-      const newFriendDoc = querySnapshot.docs[0];
-      const newFriendData = newFriendDoc.data();
+      const targetUserDoc = querySnapshot.docs[0];
       
-      // Check if already friends
-      const alreadyAdded = myFriends.some(f => f.uid === newFriendDoc.id);
-      if (alreadyAdded) {
-        showToast("Already in your circle! ❤️");
+      // 2. Check if already friends
+      if (userData?.friends?.some(f => f.uid === targetUserDoc.id)) {
+        showToast("Already friends! ❤️");
         setLoading(false);
         return;
       }
 
-      // 3. Update MY document in Firebase to add this friend
-      const myDocRef = doc(db, "users", currentUser.uid);
-      
-      const newFriendObject = {
-        uid: newFriendDoc.id,
-        name: newFriendData.displayName || "Unknown",
-        code: newFriendData.friendCode,
-        avatar: newFriendData.photoURL || "👤"
-      };
-
-      await updateDoc(myDocRef, {
-        friends: arrayUnion(newFriendObject)
+      // 3. Send Request Doc to THEIR subcollection
+      await addDoc(collection(db, "users", targetUserDoc.id, "requests"), {
+        senderUid: currentUser.uid,
+        senderName: userData.displayName || "Unknown",
+        senderCode: userData.friendCode,
+        senderPhoto: userData.photoURL || null,
+        timestamp: new Date()
       });
 
-      showToast(`Added ${newFriendObject.name}! 🎉`);
+      showToast("Request Sent! 📩");
       setFriendInput("");
-
     } catch (error) {
       console.error(error);
-      showToast("Error adding friend.");
+      showToast("Error sending request.");
     }
     setLoading(false);
   };
 
-  const removeFriend = async (friendObj) => {
-    if(window.confirm(`Remove ${friendObj.name}?`)) {
+  // --- ACCEPT REQUEST ---
+  const handleAccept = async (req) => {
+    try {
+      // 1. Add them to MY friend list
       const myDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(myDocRef, {
-        friends: arrayRemove(friendObj)
+        friends: arrayUnion({ uid: req.senderUid, name: req.senderName })
       });
-      showToast("Friend removed.");
+
+      // 2. Add ME to THEIR friend list
+      const theirDocRef = doc(db, "users", req.senderUid);
+      await updateDoc(theirDocRef, {
+        friends: arrayUnion({ uid: currentUser.uid, name: userData.displayName })
+      });
+
+      // 3. Delete the request
+      await deleteDoc(doc(db, "users", currentUser.uid, "requests", req.id));
+
+      showToast(`You are now connected with ${req.senderName}! 🎉`);
+    } catch (e) {
+      console.error(e);
+      showToast("Error accepting.");
     }
+  };
+
+  // --- DECLINE REQUEST ---
+  const handleDecline = async (id) => {
+    await deleteDoc(doc(db, "users", currentUser.uid, "requests", id));
+    showToast("Request declined.");
   };
 
   return (
@@ -92,10 +134,7 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
       
       {/* Header */}
       <div className="pt-8 px-6 pb-6 w-full flex items-center justify-between sticky top-0 z-10 bg-[#EBD4F4]/90 dark:bg-midnight-bg/90 backdrop-blur-sm">
-        <button 
-          onClick={() => onNavigate('home')}
-          className="p-3 bg-white dark:bg-midnight-card rounded-full text-gray-600 dark:text-gray-200 shadow-sm hover:scale-105 transition-all"
-        >
+        <button onClick={() => onNavigate('home')} className="p-3 bg-white dark:bg-midnight-card rounded-full text-gray-600 dark:text-gray-200 shadow-sm hover:scale-105 transition-all">
           <ChevronLeft size={24} />
         </button>
         <h1 className="text-xl font-bold text-gray-700 dark:text-white">My Circle 💖</h1>
@@ -104,97 +143,91 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
       <div className="w-full max-w-md px-4 space-y-6 mt-4">
         
-        {/* CARD 1: MY CODE */}
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
-          className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm text-center border-2 border-dashed border-pink-200 dark:border-pink-800/30 transition-colors duration-300"
-        >
-          <h3 className="text-gray-400 dark:text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Share your Unique ID</h3>
-          
-          <div className="flex items-center justify-center gap-3 bg-pink-50 dark:bg-black/20 rounded-xl p-4 mb-4">
-             <span className="text-2xl font-mono font-bold text-gray-700 dark:text-white tracking-widest">
-               {myCode}
-             </span>
-          </div>
+        {/* PENDING REQUESTS SECTION */}
+        {requests.length > 0 && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="bg-pink-100 dark:bg-pink-900/20 rounded-[2rem] p-6 border-2 border-pink-200 dark:border-pink-800">
+            <h3 className="text-pink-600 dark:text-pink-300 font-bold mb-4 flex items-center gap-2"><UserPlus size={18}/> Pending Requests</h3>
+            <div className="space-y-3">
+              {requests.map(req => (
+                <div key={req.id} className="bg-white dark:bg-midnight-card p-3 rounded-xl flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
+                       {req.senderPhoto ? <img src={req.senderPhoto} className="w-full h-full object-cover"/> : <User size={16}/>}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-700 dark:text-white text-sm">{req.senderName}</p>
+                      <p className="text-xs text-gray-400">{req.senderCode}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleDecline(req.id)} className="p-2 bg-gray-100 dark:bg-white/10 text-gray-500 rounded-full hover:bg-gray-200"><X size={16}/></button>
+                    <button onClick={() => handleAccept(req)} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 shadow-md"><Check size={16}/></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
-          <button 
-            onClick={handleCopy}
-            className="flex items-center justify-center gap-2 w-full py-2 rounded-full bg-pink-100 dark:bg-pink-900/40 text-pink-600 dark:text-pink-300 font-bold hover:bg-pink-200 dark:hover:bg-pink-900/60 transition-colors"
-          >
-            {copied ? <Check size={18} /> : <Copy size={18} />}
+        {/* MY CODE CARD */}
+        <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm text-center border-2 border-dashed border-pink-200 dark:border-pink-800/30">
+          <h3 className="text-gray-400 dark:text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Your Unique ID</h3>
+          <div className="flex items-center justify-center gap-3 bg-pink-50 dark:bg-black/20 rounded-xl p-4 mb-4">
+             <span className="text-2xl font-mono font-bold text-gray-700 dark:text-white tracking-widest">{myCode}</span>
+          </div>
+          <button onClick={handleCopy} className="flex items-center justify-center gap-2 w-full py-2 rounded-full bg-pink-100 dark:bg-pink-900/40 text-pink-600 dark:text-pink-300 font-bold hover:bg-pink-200">
             {copied ? "Copied!" : "Copy Code"}
           </button>
-        </motion.div>
+        </div>
 
-        {/* CARD 2: ADD FRIEND */}
-        <motion.div 
-          initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1 }}
-          className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm transition-colors duration-300"
-        >
-          <h3 className="text-gray-600 dark:text-white font-bold mb-4">Add a Friend</h3>
+        {/* ADD FRIEND INPUT */}
+        <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm">
+          <h3 className="text-gray-600 dark:text-white font-bold mb-4">Find a Friend</h3>
           <div className="flex gap-2">
             <input 
-              type="text" 
               value={friendInput}
               onChange={(e) => setFriendInput(e.target.value)}
               placeholder="Enter ID (e.g. ABHA-9281)"
-              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 dark:text-white focus:outline-none focus:ring-2 focus:ring-pink-200 uppercase placeholder:normal-case"
+              className="flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-black/20 dark:text-white outline-none uppercase"
             />
-            <button 
-              onClick={handleAddFriend}
-              disabled={loading}
-              className="bg-pink-400 hover:bg-pink-500 text-white p-3 rounded-xl shadow-md transition-colors disabled:opacity-50"
-            >
-              {loading ? "..." : <UserPlus size={24} />}
+            <button onClick={handleSendRequest} disabled={loading} className="bg-pink-400 hover:bg-pink-500 text-white p-3 rounded-xl shadow-md">
+              {loading ? "..." : <Search size={24} />}
             </button>
           </div>
-        </motion.div>
+        </div>
 
-        {/* CARD 3: FRIEND LIST */}
+        {/* FRIEND LIST WITH STATUS */}
         <div className="space-y-3">
-          <h3 className="text-gray-500 dark:text-gray-400 font-bold text-sm ml-2">Your Friends ({myFriends.length}/5)</h3>
-          
+          <h3 className="text-gray-500 dark:text-gray-400 font-bold text-sm ml-2">Your Circle ({friendsData.length})</h3>
           <AnimatePresence>
-            {myFriends.map((friend) => (
+            {friendsData.map((friend) => (
               <motion.div 
                 key={friend.uid}
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm flex items-center justify-between transition-colors duration-300"
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                className="bg-white dark:bg-midnight-card p-4 rounded-2xl shadow-sm flex items-center justify-between"
               >
                 <div className="flex items-center gap-4">
-                  {/* Avatar: Use Google Photo or Initial */}
-                  {friend.avatar && friend.avatar.length > 2 ? (
-                     <img src={friend.avatar} alt="avatar" className="w-12 h-12 rounded-full border-2 border-pink-100 dark:border-pink-900" />
-                  ) : (
-                    <div className="w-12 h-12 bg-pink-100 dark:bg-pink-900/20 rounded-full flex items-center justify-center text-xl">
-                      {friend.name[0]}
-                    </div>
-                  )}
-                  
+                  <div className="w-12 h-12 rounded-full bg-pink-100 dark:bg-pink-900/20 overflow-hidden border-2 border-white dark:border-white/10">
+                    {friend.photoURL ? <img src={friend.photoURL} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-xl">{friend.displayName?.[0]}</div>}
+                  </div>
                   <div>
-                    <h4 className="font-bold text-gray-700 dark:text-white">{friend.name}</h4>
-                    <span className="text-xs text-gray-400 font-mono bg-gray-50 dark:bg-white/5 px-2 py-0.5 rounded-md">
-                      {friend.code}
-                    </span>
+                    <h4 className="font-bold text-gray-700 dark:text-white">{friend.displayName}</h4>
+                    {/* --- STATUS DISPLAY HERE --- */}
+                    {friend.status ? (
+                      <p className="text-xs text-pink-500 font-medium flex items-center gap-1">
+                        <Zap size={10} fill="currentColor"/> {friend.status}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No status set</p>
+                    )}
                   </div>
                 </div>
-                
-                <button 
-                  onClick={() => removeFriend(friend)}
-                  className="p-2 text-gray-300 hover:text-red-400 transition-colors"
-                >
-                  <X size={20} />
-                </button>
               </motion.div>
             ))}
           </AnimatePresence>
-          
-          {myFriends.length === 0 && (
-            <p className="text-center text-gray-400 text-sm py-4">No friends added yet.</p>
-          )}
+          {friendsData.length === 0 && <p className="text-center text-gray-400 text-sm py-4">No friends yet. Share your code!</p>}
         </div>
+
       </div>
     </div>
   );
