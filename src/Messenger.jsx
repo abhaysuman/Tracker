@@ -22,10 +22,12 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     }
   }, [activeChatFriend]);
 
-  // 1. FETCH RECENT CHATS LIST
+  // 1. FETCH RECENT CHATS LIST (Fixed: Sorting done in app to avoid Index error)
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid), orderBy("lastUpdated", "desc"));
+    
+    // REMOVED 'orderBy' from here to fix the blank screen
+    const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const chats = snapshot.docs.map(doc => {
@@ -33,6 +35,10 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         const otherUser = data.users.find(u => u.uid !== user.uid);
         return { id: doc.id, ...data, otherUser };
       });
+      
+      // Sort them here instead (Newest first)
+      chats.sort((a, b) => (b.lastUpdated?.toMillis() || 0) - (a.lastUpdated?.toMillis() || 0));
+      
       setRecentChats(chats);
     });
     return () => unsubscribe();
