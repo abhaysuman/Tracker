@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, Bell, Lock, User, LogOut, Moon, Sun, Heart } from 'lucide-react';
 
-export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme }) {
+export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout }) { // <--- ADD onLogout
   
   const SettingSection = ({ title, children }) => (
     <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm mb-4 transition-colors duration-300">
@@ -81,7 +81,7 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme }) {
         </SettingSection>
 
         <button 
-          onClick={() => onNavigate('landing')}
+          onClick={onLogout}
           className="w-full bg-white dark:bg-midnight-card rounded-2xl p-4 text-red-400 font-bold flex items-center justify-center gap-2 shadow-sm mt-4 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors duration-300"
         >
           <LogOut size={18} />

@@ -1,22 +1,59 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { auth, googleProvider } from './firebase'; 
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth'; // <--- Import these
 
 export default function LandingPage({ onLoginSuccess }) {
-  const [modalType, setModalType] = useState(null); 
+  const [modalType, setModalType] = useState(null);
+  const [error, setError] = useState(null);
+
+  // Check if we are returning from a Google Redirect
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          onLoginSuccess(); // User just came back from Google!
+        }
+      } catch (err) {
+        console.error("Redirect Login Error:", err);
+        setError("Failed to login via redirect.");
+      }
+    };
+    checkRedirect();
+  }, [onLoginSuccess]);
 
   const handleClose = (e) => {
-    if (e.target.id === "backdrop") {
-      setModalType(null);
+    if (e.target.id === "backdrop") setModalType(null);
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    try {
+      // Try Popup first (Better for PC)
+      await signInWithPopup(auth, googleProvider);
+      onLoginSuccess(); 
+    } catch (err) {
+      // If Popup fails (or is closed), try Redirect (Better for Mobile)
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/popup-blocked') {
+        console.warn("Popup failed, switching to redirect...");
+        signInWithRedirect(auth, googleProvider);
+      } else {
+        console.error("Login Error:", err);
+        setError("Login failed. Please try again.");
+      }
     }
   };
 
+  // ... (Rest of your component stays exactly the same)
   return (
-    <div className="min-h-screen relative overflow-hidden bg-[#EBD4F4] dark:bg-midnight-bg font-sans selection:bg-pink-200 transition-colors duration-300">
+    // ... Copy the rest of the return statement from the previous code
+    <div className="min-h-screen relative overflow-hidden bg-[#EBD4F4] dark:bg-midnight-bg font-sans selection:bg-pink-200 flex flex-col items-center justify-center transition-colors duration-300">
       
       <div className="absolute top-0 left-0 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
       <div className="absolute top-0 right-0 w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
 
-      <div className="flex flex-col items-center justify-center min-h-screen p-6 relative z-0">
+      <div className="flex flex-col items-center justify-center p-6 relative z-0">
         <h1 className="text-3xl font-bold tracking-wide text-gray-700 dark:text-white mb-8 transition-colors">
           Welcome back, love.
         </h1>
@@ -44,13 +81,7 @@ export default function LandingPage({ onLoginSuccess }) {
             onClick={() => setModalType('login')} 
             className="btn-primary"
           >
-            Login
-          </button>
-          <button 
-            onClick={() => setModalType('signup')} 
-            className="btn-secondary text-gray-600 border-gray-400/30 hover:bg-white/40 dark:text-gray-300 dark:border-white/10 dark:hover:bg-white/10"
-          >
-            Sign-up
+            Start
           </button>
         </div>
       </div>
@@ -58,66 +89,35 @@ export default function LandingPage({ onLoginSuccess }) {
       <AnimatePresence>
         {modalType && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            id="backdrop"
-            onClick={handleClose}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            id="backdrop" onClick={handleClose}
             className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/20 backdrop-blur-[2px] p-4"
           >
-            
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="w-full max-w-sm bg-white dark:bg-midnight-card rounded-[2rem] shadow-2xl p-8 relative mt-[-40px] transition-colors duration-300"
+              initial={{ scale: 0.8, opacity: 0, y: 50 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.8, opacity: 0, y: 50 }}
+              className="w-full max-w-sm bg-white dark:bg-midnight-card rounded-[2rem] shadow-2xl p-8 text-center transition-colors duration-300"
             >
+              <h2 className="text-2xl font-bold text-gray-700 dark:text-white mb-6">Let's get started!</h2>
               
-              <div className="text-center mt-2">
-                <h2 className="text-2xl font-bold text-gray-700 dark:text-white mb-8">
-                  {modalType === 'login' ? 'Welcome back!' : 'Join us, love!'}
-                </h2>
+              {/* ERROR MESSAGE DISPLAY */}
+              {error && (
+                <div className="bg-red-50 text-red-400 text-sm p-3 rounded-xl mb-4 border border-red-100">
+                  {error}
+                </div>
+              )}
 
-                <form className="flex flex-col gap-4">
-                  {modalType === 'signup' && (
-                    <input type="text" placeholder="Name" className="input-field dark:bg-black/20 dark:text-white dark:placeholder-gray-500 dark:border-white/10" />
-                  )}
-                  <input type="text" placeholder="Username" className="input-field dark:bg-black/20 dark:text-white dark:placeholder-gray-500 dark:border-white/10" />
-                  <input type="password" placeholder="Password" className="input-field dark:bg-black/20 dark:text-white dark:placeholder-gray-500 dark:border-white/10" />
-                  
-                  <button 
-                    type="button" 
-                    onClick={onLoginSuccess}
-                    className="btn-primary mt-4 shadow-pink-300/50 active:scale-95 transition-transform duration-100"
-                  >
-                    {modalType === 'login' ? 'Login' : 'Create Account'}
-                  </button>
-                </form>
-              </div>
-
-            </motion.div>
-
-            <motion.div 
-               initial={{ opacity: 0, y: 10 }}
-               animate={{ opacity: 1, y: 0 }}
-               exit={{ opacity: 0, y: 10 }}
-               transition={{ duration: 0.2, delay: 0 }}
-               className="flex flex-col gap-3 mt-6 w-full max-w-xs"
-            >
               <button 
-                onClick={() => setModalType(modalType === 'login' ? 'signup' : 'login')}
-                className="w-full py-3 rounded-full bg-white/40 dark:bg-black/40 text-gray-700 dark:text-white font-semibold backdrop-blur-md hover:bg-white/60 dark:hover:bg-black/60 transition-all border border-white/50 dark:border-white/10 shadow-sm active:scale-95"
+                onClick={handleGoogleLogin}
+                className="w-full py-3 rounded-full bg-white border-2 border-gray-100 dark:border-white/10 dark:bg-black/20 text-gray-600 dark:text-white font-bold flex items-center justify-center gap-3 hover:bg-gray-50 dark:hover:bg-black/30 transition-colors"
               >
-                {modalType === 'login' ? 'Switch to Sign-up' : 'Switch to Login'}
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="G" />
+                Continue with Google
               </button>
-            </motion.div>
 
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-
     </div>
   );
 }

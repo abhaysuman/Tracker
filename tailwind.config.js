@@ -4,30 +4,15 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class', // <--- THIS ENABLES DARK MODE
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        pastel: {
-          bg: '#EBD4F4',
-          card: '#FFFFFF',
-          pink: '#FFB7B2',
-          red: '#FF6961',
-          dark: '#4A4A4A',
-        },
-        // Custom Dark Mode Colors
-        midnight: {
-          bg: '#2D1B36',      // Deep Purple Background
-          card: '#452755',    // Card Background
-          text: '#E9D5FF'     // Light Lavender Text
-        }
+        pastel: { bg: '#EBD4F4', card: '#FFFFFF', pink: '#FFB7B2', red: '#FF6961', dark: '#4A4A4A' },
+        midnight: { bg: '#2D1B36', card: '#452755', text: '#E9D5FF' }
       },
-      fontFamily: {
-        sans: ['Nunito', 'sans-serif'],
-      },
-      animation: {
-        blob: "blob 7s infinite",
-      },
+      fontFamily: { sans: ['Nunito', 'sans-serif'] },
+      animation: { blob: "blob 7s infinite" },
       keyframes: {
         blob: {
           "0%": { transform: "translate(0px, 0px) scale(1)" },
