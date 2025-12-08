@@ -13,15 +13,17 @@ import FriendActivityTab from './FriendActivityTab';
 import NotificationsModal from './NotificationsModal';
 import Messenger from './Messenger';
 import UserProfileModal from './UserProfileModal';
-import VideoCall from './VideoCall';
+import VideoCall from './VideoCall'; 
 import { Settings, Users, Bell, Phone, Video as VideoIcon, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'framer-motion';
+// FIX: Only import framer-motion ONCE
+import { AnimatePresence, motion } from 'framer-motion'; 
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, onSnapshot, collection, query, orderBy, limit, deleteDoc } from 'firebase/firestore';
 
 function App() {
+  // ... (Keep the rest of your App.jsx code exactly the same)
   // --- NAVIGATION & DATA ---
   const [currentPage, setCurrentPage] = useState('landing');
   const [moodHistory, setMoodHistory] = useState({});
