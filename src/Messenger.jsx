@@ -83,21 +83,32 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     setInputText("");
   };
 
-  // 4. START VIDEO CALL
+  // 4. START VIDEO CALL (Updated with Notification)
   const startVideoCall = async () => {
     if (!activeChat) return;
-    const roomId = `call_${user.uid}_${Date.now()}`; // Generate simple ID
+    const roomId = `call_${user.uid}_${Date.now()}`; 
     
-    // 1. Send "Call Started" message to DB
+    // 1. Send "Call Started" message to Chat (so you have a record)
     await sendToFirebase(roomId, 'call');
     
-    // 2. Trigger App to open video window as CALLER
+    // 2. Send "RINGING" Notification to the Friend
+    // This triggers the sound on their side
+    try {
+      await addDoc(collection(db, "users", activeChat.uid, "notifications"), {
+        type: 'call_invite', // Special type for ringing
+        message: 'is calling you for a video chat! 🎥',
+        roomId: roomId, // Pass the room ID so they can join
+        senderUid: user.uid,
+        senderName: user.displayName || "Friend",
+        timestamp: serverTimestamp(),
+        read: false
+      });
+    } catch (e) {
+      console.error("Could not send ring notification", e);
+    }
+    
+    // 3. Open my video window
     if (onStartCall) onStartCall(roomId);
-  };
-
-  const startNewChat = (friend) => {
-    setActiveChat(friend);
-    setShowNewChat(false);
   };
 
   if (!user) return null;
