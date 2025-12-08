@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Send, ChevronDown, Minimize2, ChevronLeft, Plus, Video } from 'lucide-react';
+import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Square } from 'lucide-react'; // Added Mic, Square
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -11,7 +11,15 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [recentChats, setRecentChats] = useState([]);
+  const [isRecording, setIsRecording] = useState(false); // <--- RECORDING STATE
+  
   const scrollRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  // --- CLOUDINARY CONFIG ---
+  const CLOUD_NAME = "dqbqrzy56"; // <--- ⚠️ PASTE YOUR CLOUD NAME HERE
+  const UPLOAD_PRESET = "gf_mood_app"; 
 
   useEffect(() => {
     if (activeChatFriend) {
@@ -21,6 +29,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     }
   }, [activeChatFriend]);
 
+  // 1. FETCH RECENT CHATS
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
@@ -36,6 +45,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     return () => unsubscribe();
   }, [user]);
 
+  // 2. FETCH MESSAGES
   useEffect(() => {
     if (!activeChat || !user) return;
     const chatId = [user.uid, activeChat.uid].sort().join("_");
@@ -47,20 +57,28 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     return () => unsubscribe();
   }, [activeChat, user]);
 
+  // --- SEND HELPER ---
   const sendToFirebase = async (content, type) => {
     const chatId = [user.uid, activeChat.uid].sort().join("_");
     const chatRef = doc(db, "chats", chatId);
+    
+    // Determine preview text based on type
+    let previewText = content;
+    if (type === 'call') previewText = '🎥 Video Call';
+    if (type === 'audio') previewText = '🎤 Voice Message';
+
     await setDoc(chatRef, {
       participants: [user.uid, activeChat.uid],
       users: [
         { uid: user.uid, name: user.displayName, avatar: user.photoURL },
         { uid: activeChat.uid, name: activeChat.name || activeChat.displayName, avatar: activeChat.avatar || activeChat.photoURL }
       ],
-      lastMessage: type === 'call' ? '🎥 Video Call started' : content,
+      lastMessage: previewText,
       lastUpdated: serverTimestamp()
     }, { merge: true });
+
     await addDoc(collection(db, "chats", chatId, "messages"), {
-      text: content,
+      text: content, // For audio, this is the URL
       type: type, 
       senderId: user.uid,
       createdAt: serverTimestamp()
@@ -74,27 +92,72 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     setInputText("");
   };
 
-  // --- SEAMLESS VIDEO CALL ---
+  // --- AUDIO RECORDING LOGIC ---
+  const handleMicClick = async () => {
+    if (isRecording) {
+      // STOP RECORDING
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    } else {
+      // START RECORDING
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          // Create Blob
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          
+          // Upload to Cloudinary
+          const formData = new FormData();
+          formData.append('file', audioBlob);
+          formData.append('upload_preset', UPLOAD_PRESET);
+          formData.append('resource_type', 'auto'); // Important for audio
+
+          try {
+            // Optimistic UI update could go here
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
+              method: 'POST',
+              body: formData
+            });
+            const data = await res.json();
+            
+            if (data.secure_url) {
+              await sendToFirebase(data.secure_url, 'audio');
+            }
+          } catch (e) {
+            console.error("Audio upload failed", e);
+            alert("Failed to send voice note.");
+          }
+
+          // Stop tracks to release mic
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (e) {
+        console.error("Mic access denied", e);
+        alert("Please allow microphone access to record.");
+      }
+    }
+  };
+
+  // --- VIDEO CALL ---
   const startVideoCall = async () => {
     if (!activeChat) return;
     const roomId = `call_${user.uid}_${Date.now()}`; 
-    
-    // 1. Immediately Open Call Window (Fastest UX)
     if (onStartCall) onStartCall(roomId);
-
-    // 2. Send Record to Chat
     await sendToFirebase(roomId, 'call');
-    
-    // 3. Send Notification to Ring Friend
     try {
       await addDoc(collection(db, "users", activeChat.uid, "notifications"), {
-        type: 'call_invite',
-        message: 'is calling you for a video chat! 🎥',
-        roomId: roomId,
-        senderUid: user.uid,
-        senderName: user.displayName || "Friend",
-        timestamp: serverTimestamp(),
-        read: false
+        type: 'call_invite', message: 'is calling you for a video chat! 🎥', roomId: roomId, senderUid: user.uid, senderName: user.displayName || "Friend", timestamp: serverTimestamp(), read: false
       });
     } catch (e) { console.error(e); }
   };
@@ -146,17 +209,26 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                     ))}
                   </div>
                 )}
+                
+                {/* MESSAGES */}
                 {activeChat && (
                   <div className="p-3 space-y-3 min-h-full flex flex-col justify-end">
                     {messages.map((msg, i) => {
                       const isMe = msg.senderId === user.uid;
                       const isCall = msg.type === 'call';
+                      const isAudio = msg.type === 'audio';
+
                       return (
                         <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                           {isCall ? (
                              <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${isMe ? 'bg-pink-100 border border-pink-200' : 'bg-white border border-gray-100 shadow-sm'}`}>
                                <div className="flex items-center gap-2 mb-2"><div className="p-2 bg-pink-500 rounded-full text-white"><Video size={16} /></div><span className="font-bold text-gray-700">Video Call</span></div>
                                <button onClick={() => { if (isMe) onStartCall && onStartCall(msg.text); else onJoinCall && onJoinCall(msg.text); }} className="block w-full text-center py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors text-xs">{isMe ? "Return to Call" : "Join Call"}</button>
+                             </div>
+                          ) : isAudio ? (
+                             // --- AUDIO MESSAGE ---
+                             <div className={`max-w-[85%] p-2 rounded-2xl ${isMe ? 'bg-pink-500 text-white rounded-tr-none' : 'bg-white dark:bg-white/10 rounded-tl-none shadow-sm'}`}>
+                               <audio controls src={msg.text} className="w-48 h-8 rounded-lg" />
                              </div>
                           ) : (
                              <div className={`max-w-[80%] px-3 py-2 text-sm ${isMe ? 'bg-pink-500 text-white rounded-2xl rounded-tr-none' : 'bg-white dark:bg-white/10 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm'}`}>{msg.text}</div>
@@ -170,10 +242,16 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               </div>
 
               {activeChat && (
-                <form onSubmit={sendMessage} className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 flex gap-2 shrink-0">
-                  <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2 text-sm outline-none dark:text-white focus:ring-2 focus:ring-pink-100 dark:focus:ring-white/10 transition-all" autoFocus />
-                  <button type="submit" disabled={!inputText.trim()} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 disabled:opacity-50 transition-colors shadow-md"><Send size={16} /></button>
-                </form>
+                <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 flex gap-2 shrink-0 items-center">
+                  <form onSubmit={sendMessage} className="flex-1 flex gap-2">
+                    <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder={isRecording ? "Recording..." : "Type a message..."} disabled={isRecording} className={`flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2 text-sm outline-none dark:text-white transition-all ${isRecording ? 'animate-pulse bg-red-50 text-red-500' : ''}`} autoFocus />
+                    {/* MIC BUTTON */}
+                    <button type="button" onClick={handleMicClick} className={`p-2 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse shadow-lg' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500'}`}>
+                      {isRecording ? <Square size={16} fill="currentColor" /> : <Mic size={18} />}
+                    </button>
+                    {!isRecording && <button type="submit" disabled={!inputText.trim()} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 disabled:opacity-50 transition-colors shadow-md"><Send size={16} /></button>}
+                  </form>
+                </div>
               )}
             </motion.div>
           )}
