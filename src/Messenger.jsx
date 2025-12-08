@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Square, Trash2, StopCircle } from 'lucide-react';
+import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Trash2 } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import Waveform from './Waveform'; 
@@ -16,7 +16,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   // RECORDING STATE
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState(null);
-  const [recordingTime, setRecordingTime] = useState(0); // Timer state
+  const [recordingTime, setRecordingTime] = useState(0);
   
   const scrollRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -24,7 +24,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const timerRef = useRef(null);
 
   // --- CLOUDINARY CONFIG ---
-  const CLOUD_NAME = "qbqrzy56"; 
+  const CLOUD_NAME = "qbqrzy56";  // <--- UPDATED WITH YOUR CLOUD NAME
   const UPLOAD_PRESET = "gf_mood_app"; 
 
   useEffect(() => {
@@ -152,17 +152,19 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
         } catch (e) { console.error("Upload failed", e); }
         
         // Stop all tracks
-        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        }
     };
 
     mediaRecorderRef.current.stop();
   };
 
   const cancelRecording = () => {
-    if (mediaRecorderRef.current) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.stream) {
         mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-        mediaRecorderRef.current = null;
     }
+    mediaRecorderRef.current = null;
     clearInterval(timerRef.current);
     setIsRecording(false);
     setRecordingStream(null);
@@ -216,46 +218,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
 
               <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-black/20 relative">
                 
-                {/* --- RECORDING OVERLAY (The Stylish UI) --- */}
-                <AnimatePresence>
-                  {isRecording && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 50 }}
-                      className="absolute inset-0 bg-white/90 dark:bg-black/90 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-6 space-y-6"
-                    >
-                      <div className="text-pink-500 font-mono text-2xl font-bold tracking-widest animate-pulse">
-                        {formatTime(recordingTime)}
-                      </div>
-                      
-                      {/* Live Waveform Container */}
-                      <div className="w-full h-24 bg-pink-50 dark:bg-pink-900/10 rounded-2xl flex items-center justify-center overflow-hidden border border-pink-100 dark:border-pink-900/30">
-                         {/* Pass stream to waveform for visualization */}
-                         <Waveform isRecording={true} stream={recordingStream} />
-                      </div>
-
-                      <div className="flex items-center gap-8">
-                        <button 
-                          onClick={cancelRecording}
-                          className="p-4 bg-gray-100 text-gray-500 rounded-full hover:bg-gray-200 dark:bg-white/10 dark:text-gray-300 transition-colors"
-                          title="Cancel"
-                        >
-                          <Trash2 size={24} />
-                        </button>
-                        
-                        <button 
-                          onClick={stopAndSendAudio}
-                          className="p-6 bg-pink-500 text-white rounded-full shadow-lg shadow-pink-500/40 hover:scale-110 transition-transform"
-                          title="Send"
-                        >
-                          <Send size={32} />
-                        </button>
-                      </div>
-                      
-                      <p className="text-gray-400 text-xs mt-4">Recording...</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
                 {/* Normal Chat Area */}
                 {!activeChat && !showNewChat && (
                   <div className="p-2 space-y-1">
@@ -269,7 +231,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                 )}
                 {!activeChat && showNewChat && (
                   <div className="p-2 space-y-1">
-                    <div className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">Select a Friend</div>
                     {friends.map(friend => (
                       <div key={friend.uid} onClick={() => startNewChat(friend)} className="flex items-center gap-3 p-3 hover:bg-white dark:hover:bg-white/5 rounded-xl cursor-pointer transition-colors"><div className="w-10 h-10 rounded-full bg-pink-100 overflow-hidden border border-white dark:border-white/10">{friend.photoURL ? <img src={friend.photoURL} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-lg">😊</div>}</div><h4 className="font-bold text-gray-800 dark:text-white text-sm">{friend.name || friend.displayName}</h4></div>
                     ))}
@@ -305,16 +266,54 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               </div>
 
               {activeChat && (
-                <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 flex gap-2 shrink-0 items-center">
-                  <form onSubmit={sendMessage} className="flex-1 flex gap-2 items-center">
-                    <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2 text-sm outline-none dark:text-white transition-all" autoFocus />
-                    
-                    {/* MIC BUTTON TRIGGERS RECORDING UI */}
-                    <button type="button" onClick={startRecording} className="p-2 rounded-full transition-all bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500">
-                      <Mic size={18} />
-                    </button>
-                    <button type="submit" disabled={!inputText.trim()} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 disabled:opacity-50 transition-colors shadow-md"><Send size={16} /></button>
-                  </form>
+                <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 shrink-0">
+                  {/* --- THE NEW INLINE RECORDING UI --- */}
+                  <AnimatePresence mode="wait">
+                    {isRecording ? (
+                        // RECORDING BAR
+                        <motion.div 
+                            key="recording-bar"
+                            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+                            className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-gray-800 rounded-full"
+                        >
+                            {/* DELETE BUTTON */}
+                            <button onClick={cancelRecording} className="p-2 bg-white dark:bg-gray-700 text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+                                <Trash2 size={18} />
+                            </button>
+                            
+                            {/* LIVE WAVEFORM & TIMER */}
+                            <div className="flex-1 h-8 flex items-center gap-2 px-2 overflow-hidden">
+                                 <div className="flex-1 h-full flex items-center">
+                                    <Waveform isRecording={true} stream={recordingStream} />
+                                 </div>
+                                 <span className="text-xs font-mono font-medium text-gray-500 dark:text-gray-300 tabular-nums">
+                                    {formatTime(recordingTime)}
+                                 </span>
+                            </div>
+
+                            {/* SEND BUTTON */}
+                            <button onClick={stopAndSendAudio} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 transition-transform hover:scale-105 shadow-sm animate-pulse">
+                                <Send size={18} />
+                            </button>
+                        </motion.div>
+                    ) : (
+                        // NORMAL TEXT INPUT BAR
+                        <motion.form 
+                            key="text-bar"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onSubmit={sendMessage} className="flex gap-2 items-center"
+                        >
+                            <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2 text-sm outline-none dark:text-white transition-all" autoFocus />
+                            
+                            {/* MIC BUTTON STARTS RECORDING */}
+                            <button type="button" onClick={startRecording} className="p-2 rounded-full transition-all bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500">
+                            <Mic size={18} />
+                            </button>
+                            
+                            <button type="submit" disabled={!inputText.trim()} className="p-2 bg-pink-500 text-white rounded-full hover:bg-pink-600 disabled:opacity-50 transition-colors shadow-md"><Send size={16} /></button>
+                        </motion.form>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </motion.div>
