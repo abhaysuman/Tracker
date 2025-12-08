@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, Copy, UserPlus, X, Check, Search, Zap, User } from 'lucide-react';
-import { db, auth } from './firebase';
-import { collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, doc, addDoc, onSnapshot, getDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { ChevronLeft, Copy, UserPlus, X, Check, Search, Zap, User, Trash2 } from 'lucide-react';
+import { db } from './firebase';
+import { collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, doc, addDoc, onSnapshot, getDoc, deleteDoc } from 'firebase/firestore';
 
 export default function FriendsPage({ onNavigate, currentUser, userData, showToast }) {
   
@@ -12,9 +12,8 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
   const [loading, setLoading] = useState(false);
   
   const [requests, setRequests] = useState([]);
-  const [friendsData, setFriendsData] = useState([]); // Store live friend data (status/avatar)
+  const [friendsData, setFriendsData] = useState([]); 
 
-  // --- 1. LISTEN FOR FRIEND REQUESTS ---
   useEffect(() => {
     if (!currentUser) return;
     const q = query(collection(db, "users", currentUser.uid, "requests"));
@@ -24,7 +23,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     return () => unsubscribe();
   }, [currentUser]);
 
-  // --- 2. FETCH LIVE FRIEND DATA (For Status) ---
   useEffect(() => {
     const fetchFriendsLive = async () => {
       if (!userData?.friends || userData.friends.length === 0) {
@@ -43,7 +41,7 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
       setFriendsData(liveData);
     };
     fetchFriendsLive();
-  }, [userData]); // Re-run if friend list changes
+  }, [userData]); 
 
   const handleCopy = () => {
     navigator.clipboard.writeText(myCode);
@@ -51,7 +49,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- SEND REQUEST ---
   const handleSendRequest = async () => {
     if (!friendInput.trim()) return;
     if (friendInput.toUpperCase() === myCode) {
@@ -61,7 +58,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
     setLoading(true);
     try {
-      // 1. Find User
       const q = query(collection(db, "users"), where("friendCode", "==", friendInput.toUpperCase().trim()));
       const querySnapshot = await getDocs(q);
 
@@ -73,14 +69,12 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
       const targetUserDoc = querySnapshot.docs[0];
       
-      // 2. Check if already friends
       if (userData?.friends?.some(f => f.uid === targetUserDoc.id)) {
         showToast("Already friends! ❤️");
         setLoading(false);
         return;
       }
 
-      // 3. Send Request Doc to THEIR subcollection
       await addDoc(collection(db, "users", targetUserDoc.id, "requests"), {
         senderUid: currentUser.uid,
         senderName: userData.displayName || "Unknown",
@@ -98,41 +92,52 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
     setLoading(false);
   };
 
-  // --- ACCEPT REQUEST ---
   const handleAccept = async (req) => {
     try {
-      // 1. Add them to MY friend list
       const myDocRef = doc(db, "users", currentUser.uid);
       await updateDoc(myDocRef, {
         friends: arrayUnion({ uid: req.senderUid, name: req.senderName })
       });
 
-      // 2. Add ME to THEIR friend list
       const theirDocRef = doc(db, "users", req.senderUid);
       await updateDoc(theirDocRef, {
         friends: arrayUnion({ uid: currentUser.uid, name: userData.displayName })
       });
 
-      // 3. Delete the request
       await deleteDoc(doc(db, "users", currentUser.uid, "requests", req.id));
-
       showToast(`You are now connected with ${req.senderName}! 🎉`);
-    } catch (e) {
-      console.error(e);
-      showToast("Error accepting.");
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // --- DECLINE REQUEST ---
   const handleDecline = async (id) => {
     await deleteDoc(doc(db, "users", currentUser.uid, "requests", id));
     showToast("Request declined.");
   };
 
+  // --- NEW: REMOVE FRIEND FUNCTION ---
+  const handleRemoveFriend = async (friendUid, friendName) => {
+    if (window.confirm(`Are you sure you want to remove ${friendName}?`)) {
+      try {
+        const myDocRef = doc(db, "users", currentUser.uid);
+        
+        // We need to remove the object that has this UID
+        // Since arrayRemove requires the EXACT object, and our local object might have extra fields,
+        // we'll fetch the array, filter it, and save it back.
+        const currentFriends = userData.friends || [];
+        const newFriends = currentFriends.filter(f => f.uid !== friendUid);
+
+        await updateDoc(myDocRef, { friends: newFriends });
+        showToast(`${friendName} removed.`);
+      } catch (e) {
+        console.error(e);
+        showToast("Error removing friend.");
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#EBD4F4] dark:bg-midnight-bg pb-24 font-sans selection:bg-pink-200 flex flex-col items-center transition-colors duration-300">
       
-      {/* Header */}
       <div className="pt-8 px-6 pb-6 w-full flex items-center justify-between sticky top-0 z-10 bg-[#EBD4F4]/90 dark:bg-midnight-bg/90 backdrop-blur-sm">
         <button onClick={() => onNavigate('home')} className="p-3 bg-white dark:bg-midnight-card rounded-full text-gray-600 dark:text-gray-200 shadow-sm hover:scale-105 transition-all">
           <ChevronLeft size={24} />
@@ -143,7 +148,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
 
       <div className="w-full max-w-md px-4 space-y-6 mt-4">
         
-        {/* PENDING REQUESTS SECTION */}
         {requests.length > 0 && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="bg-pink-100 dark:bg-pink-900/20 rounded-[2rem] p-6 border-2 border-pink-200 dark:border-pink-800">
             <h3 className="text-pink-600 dark:text-pink-300 font-bold mb-4 flex items-center gap-2"><UserPlus size={18}/> Pending Requests</h3>
@@ -169,7 +173,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
           </motion.div>
         )}
 
-        {/* MY CODE CARD */}
         <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm text-center border-2 border-dashed border-pink-200 dark:border-pink-800/30">
           <h3 className="text-gray-400 dark:text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">Your Unique ID</h3>
           <div className="flex items-center justify-center gap-3 bg-pink-50 dark:bg-black/20 rounded-xl p-4 mb-4">
@@ -180,7 +183,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
           </button>
         </div>
 
-        {/* ADD FRIEND INPUT */}
         <div className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm">
           <h3 className="text-gray-600 dark:text-white font-bold mb-4">Find a Friend</h3>
           <div className="flex gap-2">
@@ -196,7 +198,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
           </div>
         </div>
 
-        {/* FRIEND LIST WITH STATUS */}
         <div className="space-y-3">
           <h3 className="text-gray-500 dark:text-gray-400 font-bold text-sm ml-2">Your Circle ({friendsData.length})</h3>
           <AnimatePresence>
@@ -212,7 +213,6 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-700 dark:text-white">{friend.displayName}</h4>
-                    {/* --- STATUS DISPLAY HERE --- */}
                     {friend.status ? (
                       <p className="text-xs text-pink-500 font-medium flex items-center gap-1">
                         <Zap size={10} fill="currentColor"/> {friend.status}
@@ -222,6 +222,14 @@ export default function FriendsPage({ onNavigate, currentUser, userData, showToa
                     )}
                   </div>
                 </div>
+                
+                {/* REMOVE FRIEND BUTTON */}
+                <button 
+                  onClick={() => handleRemoveFriend(friend.uid, friend.displayName)}
+                  className="p-2 text-gray-300 hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-full transition-colors"
+                >
+                  <Trash2 size={18} />
+                </button>
               </motion.div>
             ))}
           </AnimatePresence>
