@@ -179,7 +179,17 @@ function App() {
       {currentPage === 'insights' && <InsightsPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
       {currentPage === 'history' && <HistoryPage onNavigate={setCurrentPage} savedMoods={moodHistory} onDeleteMood={handleDeleteMood} />}
       {currentPage === 'surprise' && <SurprisePage onNavigate={setCurrentPage} />}
-      {currentPage === 'settings' && <SettingsPage onNavigate={setCurrentPage} isDarkMode={isDarkMode} toggleTheme={toggleTheme} onLogout={handleLogout} />}
+      {currentPage === 'settings' && (
+        <SettingsPage 
+          onNavigate={setCurrentPage} 
+          isDarkMode={isDarkMode} 
+          toggleTheme={toggleTheme} 
+          onLogout={handleLogout}
+          // --- PASS REAL USER DATA HERE ---
+          user={user} 
+          userData={userData} 
+        />
+      )}
       
       {currentPage === 'friends' && (
         <FriendsPage 
