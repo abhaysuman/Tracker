@@ -1,4 +1,5 @@
-import { StrictMode } from 'react'
+// Add this temporary line to debug
+console.log("Current Auth Domain:", "gf-mood-tracker-a26de.firebaseapp.com");import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
