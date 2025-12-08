@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, ChevronRight, ChevronLeft, MessageCircle, Zap, Heart } from 'lucide-react';
+import { Bell, ChevronRight, ChevronLeft, MessageCircle, Zap, Heart, Image as ImageIcon } from 'lucide-react'; // Added Image Icon
 import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from './firebase';
 
@@ -28,7 +28,6 @@ export default function FriendActivityTab({ friends = [] }) {
       setLoading(true);
       let mixedFeed = [];
 
-      // GET FRIEND MOODS ONLY (Hugs Removed)
       for (const friend of friends) {
         try {
           const friendDocRef = doc(db, "users", friend.uid);
@@ -42,6 +41,8 @@ export default function FriendActivityTab({ friends = [] }) {
             const dates = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
             
             if (dates.length > 0) {
+              // Check the last few days, not just the very last one, 
+              // but for now let's grab the latest entry of the latest day.
               const latestDay = history[dates[0]];
               const latestMood = latestDay[latestDay.length - 1];
               
@@ -55,6 +56,7 @@ export default function FriendActivityTab({ friends = [] }) {
                 mood: latestMood.emoji,
                 label: latestMood.label,
                 note: latestMood.note,
+                photo: latestMood.photo, // <--- Fetch Photo
                 timeStr: latestMood.timestamp,
                 sortDate: new Date(`${dates[0]} ${latestMood.timestamp}`).getTime() || 0
               });
@@ -110,17 +112,17 @@ export default function FriendActivityTab({ friends = [] }) {
                 {/* Send Hug Button */}
                 <button 
                   onClick={() => sendHug(item.uid, item.name)}
-                  className="absolute top-4 right-4 text-pink-300 hover:text-pink-500 hover:scale-110 transition-all p-2 bg-pink-50 dark:bg-pink-900/20 rounded-full"
+                  className="absolute top-4 right-4 text-pink-300 hover:text-pink-500 hover:scale-110 transition-all p-2 bg-pink-50 dark:bg-pink-900/20 rounded-full z-10"
                   title="Send Hug"
                 >
                   <Heart size={16} fill="currentColor" />
                 </button>
 
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden">
+                  <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center border-2 border-white shadow-sm overflow-hidden shrink-0">
                     {item.avatar ? <img src={item.avatar} className="w-full h-full object-cover" /> : item.name[0]}
                   </div>
-                  <div className="flex-1 min-w-0 pr-8">
+                  <div className="flex-1 min-w-0 pr-6">
                     <h4 className="font-bold text-gray-700 dark:text-white text-sm truncate">{item.name}</h4>
                     {item.status && <p className="text-[10px] text-pink-500 font-medium flex items-center gap-1"><Zap size={8} /> {item.status}</p>}
                     
@@ -128,11 +130,23 @@ export default function FriendActivityTab({ friends = [] }) {
                       <span className="text-2xl">{item.mood}</span>
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-300">{item.label}</span>
                     </div>
+                    
                     {item.note && (
                       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-black/20 p-2 rounded-lg italic relative">
                         <MessageCircle size={10} className="absolute -top-1 -right-1 text-pink-300" />"{item.note}"
                       </div>
                     )}
+
+                    {/* --- FEED PHOTO --- */}
+                    {item.photo && (
+                       <div className="mt-2 rounded-lg overflow-hidden border border-gray-100 dark:border-white/10 relative group-image cursor-pointer">
+                         <img src={item.photo} className="w-full h-32 object-cover" />
+                         <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                            <ImageIcon size={20} className="text-white" />
+                         </div>
+                       </div>
+                    )}
+
                     <span className="text-[10px] text-gray-300 block mt-2 text-right">{item.timeStr}</span>
                   </div>
                 </div>
