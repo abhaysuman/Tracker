@@ -1,51 +1,99 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, MessageCircle, Bell, CheckCheck } from 'lucide-react';
-import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { X, Heart, MessageCircle, Bell, CheckCheck, UserPlus, Check } from 'lucide-react';
+import { collection, query, orderBy, limit, onSnapshot, doc, deleteDoc, writeBatch, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from './firebase';
 
 export default function NotificationsModal({ isOpen, onClose, user }) {
-  const [notifs, setNotifs] = useState([]);
+  const [items, setItems] = useState([]); // Combined list of Notifs + Requests
 
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, "users", user.uid, "notifications"),
-      orderBy("timestamp", "desc"),
-      limit(20)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setNotifs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+    // 1. LISTEN TO NOTIFICATIONS (Hugs)
+    const notifQuery = query(collection(db, "users", user.uid, "notifications"), orderBy("timestamp", "desc"), limit(20));
+    const unsubNotifs = onSnapshot(notifQuery, (snap) => {
+      const notifs = snap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(), 
+        isRequest: false // Flag to distinguish
+      }));
+      mergeAndSet(notifs, 'notifs');
     });
-    return () => unsubscribe();
+
+    // 2. LISTEN TO FRIEND REQUESTS
+    const reqQuery = query(collection(db, "users", user.uid, "requests"));
+    const unsubReqs = onSnapshot(reqQuery, (snap) => {
+      const requests = snap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data(), 
+        isRequest: true, // Flag to distinguish
+        message: "sent you a friend request!"
+      }));
+      mergeAndSet(requests, 'requests');
+    });
+
+    // Helper to merge two live lists
+    let currentNotifs = [];
+    let currentReqs = [];
+    
+    const mergeAndSet = (newData, type) => {
+      if (type === 'notifs') currentNotifs = newData;
+      if (type === 'requests') currentReqs = newData;
+      
+      // Combine and sort by timestamp (newest first)
+      const combined = [...currentReqs, ...currentNotifs].sort((a, b) => {
+        const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : Date.now();
+        const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : Date.now();
+        return tB - tA;
+      });
+      setItems(combined);
+    };
+
+    return () => { unsubNotifs(); unsubReqs(); };
   }, [user]);
 
-  const clearNotification = async (id) => {
-    try { await deleteDoc(doc(db, "users", user.uid, "notifications", id)); } catch (e) { console.error(e); }
+  // --- ACTIONS ---
+
+  const clearNotification = async (id, isRequest) => {
+    try { 
+      const collectionName = isRequest ? "requests" : "notifications";
+      await deleteDoc(doc(db, "users", user.uid, collectionName, id)); 
+    } catch (e) { console.error(e); }
   };
 
   const markAllRead = async () => {
-    if (notifs.length === 0) return;
+    if (items.length === 0) return;
     try {
       const batch = writeBatch(db);
-      const q = query(collection(db, "users", user.uid, "notifications"));
-      const snapshot = await getDocs(q);
+      // Delete all notifications (Keep requests though! don't delete requests via 'clear all')
+      const notifsOnly = items.filter(i => !i.isRequest);
       
-      snapshot.forEach(docSnap => {
-        // We can either delete them or mark as read. 
-        // Let's delete them to keep it clean, OR strictly set 'read: true'
-        // Since user asked for "mark all read", let's clear them visually or actually delete?
-        // Usually "Mark read" keeps them but greys them out. Let's delete for cleanliness in this app.
-        // batch.delete(docSnap.ref); <--- If you want to delete
-        
-        // Actually, let's just delete them so the badge count goes to 0 effectively. 
-        // Or if you want to keep history, we update 'read: true'.
-        // Let's delete for now as it's a simple tracker.
-        batch.delete(docSnap.ref);
+      notifsOnly.forEach(item => {
+        const ref = doc(db, "users", user.uid, "notifications", item.id);
+        batch.delete(ref);
       });
       
       await batch.commit();
     } catch (e) { console.error(e); }
+  };
+
+  const handleAcceptRequest = async (req) => {
+    try {
+      // 1. Add to MY friends
+      await updateDoc(doc(db, "users", user.uid), {
+        friends: arrayUnion({ uid: req.senderUid, name: req.senderName })
+      });
+      // 2. Add to THEIR friends
+      await updateDoc(doc(db, "users", req.senderUid), {
+        friends: arrayUnion({ uid: user.uid, name: user.displayName })
+      });
+      // 3. Delete Request
+      await deleteDoc(doc(db, "users", user.uid, "requests", req.id));
+      
+      // 4. (Optional) Send them a "Hug" back automatically as a notification
+      // await addDoc(...) 
+    } catch (e) { console.error("Error accepting", e); }
   };
 
   return (
@@ -75,18 +123,17 @@ export default function NotificationsModal({ isOpen, onClose, user }) {
           </button>
         </div>
 
-        {/* Mark All Read Button */}
-        {notifs.length > 0 && (
+        {items.some(i => !i.isRequest) && (
           <button 
             onClick={markAllRead}
             className="mb-4 text-xs font-bold text-pink-500 flex items-center gap-1 hover:text-pink-600 self-end"
           >
-            <CheckCheck size={14} /> Clear All
+            <CheckCheck size={14} /> Clear Notifications
           </button>
         )}
         
         <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-hide">
-          {notifs.length === 0 ? (
+          {items.length === 0 ? (
             <div className="text-center text-gray-400 py-10 flex flex-col items-center">
               <div className="w-16 h-16 bg-gray-50 dark:bg-white/5 rounded-full flex items-center justify-center mb-3">
                  <Bell size={24} className="opacity-20" />
@@ -94,31 +141,58 @@ export default function NotificationsModal({ isOpen, onClose, user }) {
               <p>No new updates.</p>
             </div>
           ) : (
-            notifs.map((n) => (
+            items.map((item) => (
               <motion.div 
-                key={n.id}
+                key={item.id}
                 layout
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-gray-50 dark:bg-black/20 p-3 rounded-xl flex items-start gap-3 relative group border border-transparent hover:border-pink-100 dark:hover:border-pink-900/30 transition-colors"
+                className={`p-3 rounded-xl flex items-start gap-3 relative group border transition-colors ${item.isRequest ? 'bg-pink-50 dark:bg-pink-900/20 border-pink-100' : 'bg-gray-50 dark:bg-black/20 border-transparent'}`}
               >
-                <div className={`p-2 rounded-full shrink-0 ${n.type === 'hug' ? 'bg-pink-100 text-pink-500' : 'bg-blue-100 text-blue-500'}`}>
-                  {n.type === 'hug' ? <Heart size={16} fill="currentColor" /> : <MessageCircle size={16} />}
+                {/* ICON */}
+                <div className={`p-2 rounded-full shrink-0 ${item.isRequest ? 'bg-pink-200 text-pink-600' : item.type === 'hug' ? 'bg-pink-100 text-pink-500' : 'bg-blue-100 text-blue-500'}`}>
+                  {item.isRequest ? <UserPlus size={16} /> : item.type === 'hug' ? <Heart size={16} fill="currentColor" /> : <MessageCircle size={16} />}
                 </div>
-                <div>
+
+                <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-700 dark:text-gray-200 leading-tight">
-                    <span className="font-bold">{n.senderName}</span> {n.message}
+                    <span className="font-bold">{item.senderName}</span> {item.message}
                   </p>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {n.timestamp?.toDate ? n.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
-                  </p>
+                  
+                  {/* REQUEST ACTIONS */}
+                  {item.isRequest && (
+                    <div className="flex gap-2 mt-2">
+                      <button 
+                        onClick={() => handleAcceptRequest(item)}
+                        className="flex-1 bg-pink-500 text-white text-xs font-bold py-1.5 rounded-lg hover:bg-pink-600 flex items-center justify-center gap-1"
+                      >
+                        <Check size={12} /> Accept
+                      </button>
+                      <button 
+                        onClick={() => clearNotification(item.id, true)}
+                        className="px-3 bg-white dark:bg-white/10 text-gray-500 text-xs font-bold py-1.5 rounded-lg border hover:bg-gray-50"
+                      >
+                        Ignore
+                      </button>
+                    </div>
+                  )}
+
+                  {!item.isRequest && (
+                    <p className="text-[10px] text-gray-400 mt-1">
+                      {item.timestamp?.toDate ? item.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
+                    </p>
+                  )}
                 </div>
-                <button 
-                  onClick={() => clearNotification(n.id)}
-                  className="absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X size={14} />
-                </button>
+
+                {/* DELETE BUTTON (Hidden for requests, they use Ignore button) */}
+                {!item.isRequest && (
+                  <button 
+                    onClick={() => clearNotification(item.id, false)}
+                    className="absolute top-2 right-2 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
               </motion.div>
             ))
           )}
