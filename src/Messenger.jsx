@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Trash2 } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import Waveform from './Waveform';
+import Waveform from './Waveform'; 
 
 export default function Messenger({ isOpen, onClose, activeChatFriend, user, friends = [], onStartCall, onJoinCall }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -17,6 +17,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStream, setRecordingStream] = useState(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [isUploading, setIsUploading] = useState(false); // New loading state
   
   const scrollRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -35,6 +36,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     }
   }, [activeChatFriend]);
 
+  // 1. FETCH RECENT CHATS
   useEffect(() => {
     if (!user) return;
     const q = query(collection(db, "chats"), where("participants", "array-contains", user.uid));
@@ -50,6 +52,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     return () => unsubscribe();
   }, [user]);
 
+  // 2. FETCH MESSAGES
   useEffect(() => {
     if (!activeChat || !user) return;
     const chatId = [user.uid, activeChat.uid].sort().join("_");
@@ -99,7 +102,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Setup Recorder
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -110,11 +112,9 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
 
       mediaRecorder.start();
       
-      // Update UI State ONLY after successful start
       setRecordingStream(stream); 
       setIsRecording(true);
       
-      // Start Timer
       setRecordingTime(0);
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
@@ -129,24 +129,28 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
   const stopAndSendAudio = () => {
     if (!mediaRecorderRef.current) return;
     
-    // Stop Timer & Clear UI state immediately
+    setIsUploading(true); // Show loading state on button
+    
+    // Stop Timer & Clear UI
     clearInterval(timerRef.current);
-    setIsRecording(false);
-    setRecordingStream(null); // This unmounts the Waveform component
+    setRecordingStream(null); 
 
-    // Define upload logic
+    // Handle the stop event
     mediaRecorderRef.current.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         
-        // Stop all tracks (Turn off mic light)
+        // Stop tracks
         if (mediaRecorderRef.current.stream) {
             mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
         }
 
+        console.log("Audio recorded, size:", audioBlob.size); // Debugging
+
         const formData = new FormData();
         formData.append('file', audioBlob);
         formData.append('upload_preset', UPLOAD_PRESET);
-        formData.append('resource_type', 'auto');
+        // IMPORTANT: 'video' resource type is safer for .webm audio containers
+        formData.append('resource_type', 'video'); 
 
         try {
           const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/upload`, {
@@ -154,8 +158,20 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
             body: formData
           });
           const data = await res.json();
-          if (data.secure_url) await sendToFirebase(data.secure_url, 'audio');
-        } catch (e) { console.error("Upload failed", e); }
+          
+          if (data.error) {
+             console.error("Cloudinary Error:", data.error.message);
+             alert("Upload failed: " + data.error.message);
+          } else if (data.secure_url) {
+             console.log("Upload success:", data.secure_url);
+             await sendToFirebase(data.secure_url, 'audio');
+          }
+        } catch (e) { 
+            console.error("Network upload failed", e); 
+        }
+        
+        setIsRecording(false);
+        setIsUploading(false);
     };
 
     mediaRecorderRef.current.stop();
@@ -220,7 +236,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
               </div>
 
               <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-black/20">
-                {/* Chat Lists and Messages (Simplified for brevity - keep your existing code for lists/messages here) */}
+                {/* RECENT CHATS LIST */}
                 {!activeChat && !showNewChat && (
                   <div className="p-2 space-y-1">
                     {recentChats.map(chat => (
@@ -232,7 +248,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                   </div>
                 )}
                 
-                {/* Friend Selection */}
+                {/* FRIEND LIST FOR NEW CHAT */}
                 {!activeChat && showNewChat && (
                   <div className="p-2 space-y-1">
                     {friends.map(friend => (
@@ -241,7 +257,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                   </div>
                 )}
 
-                {/* Active Chat Messages */}
+                {/* MESSAGES VIEW */}
                 {activeChat && (
                   <div className="p-3 space-y-3 min-h-full flex flex-col justify-end">
                     {messages.map((msg, i) => {
@@ -257,7 +273,7 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                                <button onClick={() => { if (isMe) onStartCall && onStartCall(msg.text); else onJoinCall && onJoinCall(msg.text); }} className="block w-full text-center py-2 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors text-xs">{isMe ? "Return to Call" : "Join Call"}</button>
                              </div>
                           ) : isAudio ? (
-                             // --- AUDIO PLAYBACK ---
+                             // --- AUDIO MESSAGE ---
                              <div className="w-64 max-w-[85%]">
                                 <Waveform audioUrl={msg.text} isMe={isMe} />
                              </div>
@@ -272,25 +288,21 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                 )}
               </div>
 
-              {/* --- INPUT AREA (The Fix) --- */}
+              {/* --- INPUT AREA --- */}
               {activeChat && (
                 <div className="p-2 bg-white dark:bg-midnight-card border-t border-gray-100 dark:border-white/5 shrink-0">
                   <AnimatePresence mode="wait">
                     {isRecording ? (
-                        // --- RECORDING UI (Gray Bar with Delete) ---
+                        // RECORDING UI
                         <motion.div 
                             key="recording-bar"
                             initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
                             className="flex items-center gap-2 p-1 bg-gray-500 rounded-full h-12 px-2"
                         >
-                            {/* DELETE BUTTON */}
-                            <button onClick={cancelRecording} className="p-2 bg-white text-gray-500 rounded-full hover:bg-gray-200 transition-colors shadow-sm">
-                                <Trash2 size={18} />
-                            </button>
+                            <button onClick={cancelRecording} className="p-2 bg-white text-gray-500 rounded-full hover:bg-gray-200 transition-colors shadow-sm"><Trash2 size={18} /></button>
                             
-                            {/* LIVE WAVEFORM + TIMER */}
                             <div className="flex-1 flex items-center gap-3 px-2 overflow-hidden h-full">
-                                 {/* Using Waveform component safely with refs */}
+                                 {/* Using Waveform component safely */}
                                  <div className="flex-1 h-8 flex items-center">
                                     <Waveform isRecording={true} stream={recordingStream} />
                                  </div>
@@ -299,13 +311,12 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                                  </span>
                             </div>
 
-                            {/* SEND BUTTON */}
-                            <button onClick={stopAndSendAudio} className="p-2 bg-white text-pink-500 rounded-full shadow-sm hover:scale-105 transition-transform">
-                                <Send size={18} fill="currentColor" />
+                            <button onClick={stopAndSendAudio} disabled={isUploading} className="p-2 bg-white text-pink-500 rounded-full shadow-sm hover:scale-105 transition-transform disabled:opacity-50">
+                                {isUploading ? <div className="w-4 h-4 border-2 border-pink-500 border-t-transparent rounded-full animate-spin"></div> : <Send size={18} fill="currentColor" />}
                             </button>
                         </motion.div>
                     ) : (
-                        // --- NORMAL TEXT INPUT ---
+                        // TEXT INPUT UI
                         <motion.form 
                             key="text-bar"
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -313,7 +324,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, fri
                         >
                             <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2.5 text-sm outline-none dark:text-white transition-all focus:ring-2 focus:ring-pink-100 dark:focus:ring-white/10" autoFocus />
                             
-                            {/* MIC BUTTON */}
                             <button type="button" onClick={startRecording} className="p-2.5 rounded-full transition-all bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500">
                                 <Mic size={20} />
                             </button>
