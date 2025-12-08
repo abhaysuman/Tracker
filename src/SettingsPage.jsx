@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare, Award } from 'lucide-react'; // Added Award
-import { doc, updateDoc } from 'firebase/firestore';
+import { ChevronLeft, Lock, User, LogOut, Moon, Sun, Edit2, Check, X, Camera, MessageSquare } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore'; 
 import { updateProfile } from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, auth, storage } from './firebase';
+// REMOVED: import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, auth } from './firebase'; // REMOVED storage import
 import FeedbackModal from './FeedbackModal';
 
 export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLogout, user, userData }) {
@@ -15,47 +15,65 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
   const [isStatusEditing, setIsStatusEditing] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  
   const fileInputRef = useRef(null);
 
-  // --- BADGE LOGIC ---
+  // --- CLOUDINARY CONFIG ---
+  const CLOUD_NAME = "dqbqrzy56"; // <--- 1. PASTE YOUR CLOUD NAME HERE
+  const UPLOAD_PRESET = "gf_mood_app";        // <--- 2. SAME PRESET AS BEFORE
+
+  // --- HANDLE PHOTO UPLOAD (VIA CLOUDINARY) ---
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingImg(true);
+    try {
+      // 1. Upload to Cloudinary
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', UPLOAD_PRESET);
+
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      const downloadURL = data.secure_url; // Cloudinary URL
+
+      if (!downloadURL) throw new Error("Upload failed");
+
+      // 2. Update Firebase Auth Profile
+      await updateProfile(auth.currentUser, { photoURL: downloadURL });
+
+      // 3. Update Firestore Database
+      const userDocRef = doc(db, "users", user.uid);
+      await updateDoc(userDocRef, { photoURL: downloadURL });
+
+      alert("Profile photo updated! 📸");
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      alert("Failed to upload image.");
+    }
+    setUploadingImg(false);
+  };
+
   const getBadges = () => {
     const badges = [];
     const streak = userData?.streak || 0;
     const friendCount = userData?.friends?.length || 0;
     
-    // Streak Badges
     if (streak >= 3) badges.push({ icon: '🔥', label: 'Heating Up', color: 'bg-orange-100 text-orange-600' });
     if (streak >= 7) badges.push({ icon: '🚀', label: '7 Day Streak', color: 'bg-purple-100 text-purple-600' });
     if (streak >= 30) badges.push({ icon: '👑', label: 'Commitment', color: 'bg-yellow-100 text-yellow-600' });
-
-    // Social Badges
     if (friendCount >= 1) badges.push({ icon: '🌱', label: 'Connected', color: 'bg-green-100 text-green-600' });
     if (friendCount >= 5) badges.push({ icon: '🦋', label: 'Social Butterfly', color: 'bg-pink-100 text-pink-600' });
-
-    // Beta User
     badges.push({ icon: '🛠️', label: 'Early Adopter', color: 'bg-gray-100 text-gray-600' });
 
     return badges;
   };
 
   const myBadges = getBadges();
-
-  // ... (Keep existing handlers: handleImageUpload, handleSaveName, etc.) ...
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploadingImg(true);
-    try {
-      const storageRef = ref(storage, `profile_pictures/${user.uid}`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      await updateProfile(auth.currentUser, { photoURL: downloadURL });
-      const userDocRef = doc(db, "users", user.uid);
-      await updateDoc(userDocRef, { photoURL: downloadURL });
-      alert("Profile photo updated! 📸");
-    } catch (error) { console.error(error); }
-    setUploadingImg(false);
-  };
 
   const handleSaveName = async () => {
     if (!newName.trim()) return;
@@ -154,7 +172,7 @@ export default function SettingsPage({ onNavigate, isDarkMode, toggleTheme, onLo
             </div>
           </div>
 
-          {/* BADGES SECTION (INSIDE PROFILE CARD) */}
+          {/* BADGES SECTION */}
           <div className="border-t border-gray-100 dark:border-white/5 pt-4">
              <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Achievements</p>
              <div className="flex flex-wrap gap-2">
