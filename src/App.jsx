@@ -38,7 +38,7 @@ function App() {
   const [userData, setUserData] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to Dark for Discord vibe
+  const [isDarkMode, setIsDarkMode] = useState(true); 
   const [toastMessage, setToastMessage] = useState(null);
 
   // GLOBAL MODALS
@@ -69,7 +69,6 @@ function App() {
 
   useEffect(() => { if ('Notification' in window && Notification.permission !== 'granted') Notification.requestPermission(); }, []);
 
-  // ONLINE HEARTBEAT
   useEffect(() => {
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
@@ -111,7 +110,6 @@ function App() {
     }
   }, [user]);
 
-  // AUTH LISTENER
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -120,7 +118,6 @@ function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // NOTIFICATION LISTENER
   useEffect(() => {
     if (!user) return;
     ringtoneRef.current.loop = true;
@@ -162,12 +159,10 @@ function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'dark' : ''}`}>
-      
-      {/* PUBLIC PAGES (Without Sidebar) */}
       {currentPage === 'landing' && <LandingPage onLoginSuccess={() => {}} />}
       {currentPage === 'setup' && <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
 
-      {/* PROTECTED PAGES (Wrapped in SideBarMessenger) */}
+      {/* DISCORD LAYOUT WRAPPER */}
       {user && currentPage !== 'landing' && currentPage !== 'setup' && (
         <SideBarMessenger 
           user={user} 
@@ -183,7 +178,7 @@ function App() {
           onOpenProfile={() => setIsProfileOpen(true)}
           onLogout={handleLogout}
         >
-            {/* CONTENT INJECTED INTO MAIN AREA */}
+            {/* CONTENT PAGES (RENDERED IN MAIN STAGE) */}
             {currentPage === 'home' && <HomePage onNavigate={setCurrentPage} onSaveMood={handleSaveMood} />}
             {currentPage === 'calendar' && <CalendarPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
             {currentPage === 'insights' && <InsightsPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
@@ -195,12 +190,11 @@ function App() {
         </SideBarMessenger>
       )}
 
-      {/* GLOBAL MODALS & OVERLAYS */}
+      {/* GLOBAL OVERLAYS */}
       <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} userData={userData} />
       <UserProfileModal isOpen={!!viewProfileUid} onClose={() => setViewProfileUid(null)} targetUid={viewProfileUid} onMessageClick={(friendData) => { setChatTarget(friendData); setViewProfileUid(null); }} />
       {activeCallId && <VideoCall roomId={activeCallId} role={callRole} onClose={() => { setActiveCallId(null); setCallRole(null); window.location.reload(); }} />}
-      
       <AnimatePresence>{incomingCall && <motion.div initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }} className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[300] bg-white dark:bg-midnight-card px-6 py-4 rounded-full shadow-2xl border-2 border-pink-500 flex items-center gap-6"><div className="flex items-center gap-3"><div className="p-3 bg-pink-100 rounded-full animate-pulse text-pink-600"><Phone size={24} className="shake-animation" /></div><div><h3 className="font-bold text-gray-800 dark:text-white text-lg">{incomingCall.senderName}</h3><p className="text-pink-500 text-xs font-bold uppercase tracking-wider">Incoming Video Call...</p></div></div><div className="flex gap-2"><button onClick={rejectCall} className="p-3 bg-red-100 text-red-500 rounded-full hover:bg-red-200 transition-colors"><X size={20} /></button><button onClick={answerCall} className="p-3 bg-green-500 text-white rounded-full hover:bg-green-600 shadow-lg transition-transform hover:scale-110"><VideoIcon size={20} fill="currentColor" /></button></div></motion.div>}</AnimatePresence>
       <GlobalDialog isOpen={dialogOpen} config={dialogConfig} onClose={() => setDialogOpen(false)} />
       <AnimatePresence>{toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}</AnimatePresence>

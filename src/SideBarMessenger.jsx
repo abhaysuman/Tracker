@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, ChevronLeft, Plus, Video, Send, Mic, Trash2, MoreVertical, Image as ImageIcon, CheckCheck, Search, X, Home, Calendar, BarChart2, Gift, CheckSquare } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -82,7 +83,7 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
     return () => { unsubscribeMsgs(); unsubscribeChat(); unsubscribeUser(); };
   }, [activeChat, user]);
 
-  // --- HELPERS (Abbreviated for cleaner file) ---
+  // --- HELPERS (Abbreviated) ---
   const handleInputChange = async (e) => { setInputText(e.target.value); if(!activeChat) return; const chatId = [user.uid, activeChat.uid].sort().join("_"); await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: true } }, { merge: true }); if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = setTimeout(async () => { await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: false } }, { merge: true }); }, 2000); };
   const handleImageSelect = async (e) => { const file = e.target.files[0]; if (!file) return; setIsUploading(true); const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', UPLOAD_PRESET); formData.append('api_key', API_KEY); try { const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: 'POST', body: formData }); const data = await res.json(); if (data.secure_url) await sendToFirebase(data.secure_url, 'image'); } catch (err) { console.error(err); } setIsUploading(false); };
   const sendToFirebase = async (content, type) => { const chatId = [user.uid, activeChat.uid].sort().join("_"); const chatRef = doc(db, "chats", chatId); let previewText = content; if (type === 'call') previewText = '🎥 Video Call'; if (type === 'audio') previewText = '🎤 Voice Message'; if (type === 'image') previewText = '📷 Photo'; await setDoc(chatRef, { participants: [user.uid, activeChat.uid], users: [ { uid: user.uid, name: user.displayName, avatar: user.photoURL }, { uid: activeChat.uid, name: activeChat.name || activeChat.displayName, avatar: activeChat.avatar || activeChat.photoURL } ], lastMessage: previewText, lastUpdated: serverTimestamp(), typing: { [user.uid]: false } }, { merge: true }); await addDoc(collection(db, "chats", chatId, "messages"), { text: content, type: type, senderId: user.uid, createdAt: serverTimestamp(), read: false }); };
@@ -94,14 +95,24 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
   const startVideoCall = async () => { if (!activeChat) return; const roomId = `call_${user.uid}_${Date.now()}`; if (onStartCall) onStartCall(roomId); await sendToFirebase(roomId, 'call'); try { await addDoc(collection(db, "users", activeChat.uid, "notifications"), { type: 'call_invite', message: 'is calling! 🎥', roomId: roomId, senderUid: user.uid, senderName: user.displayName, timestamp: serverTimestamp(), read: false }); } catch (e) {} };
   const requestClearChat = () => { setShowChatMenu(false); openDialog("Clear Chat", "Delete entire history?", async () => { const chatId = [user.uid, activeChat.uid].sort().join("_"); const q = query(collection(db, "chats", chatId, "messages")); const snapshot = await getDocs(q); const batch = writeBatch(db); snapshot.docs.forEach((doc) => batch.delete(doc.ref)); batch.update(doc(db, "chats", chatId), { lastMessage: "" }); await batch.commit(); }, true, "Clear"); };
 
-  // --- RENDER (FIXED SIDEBAR LAYOUT) ---
+  // --- RENDER (DISCORD LAYOUT) ---
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#1e1f22] font-sans">
       
       {/* 1. LEFT RAIL (Navigation) */}
       <div className="w-[72px] bg-[#1e1f22] flex flex-col items-center py-3 gap-2 border-r border-[#1e1f22] shrink-0 z-50">
-        <NavIcon icon={<Home size={28} />} label="Home" onClick={() => { setActiveChat(null); onNavigate('home'); }} />
+        
+        {/* NEW MESSAGES TAB (Opens DM List) */}
+        <NavIcon 
+            icon={<MessageCircle size={28} />} 
+            label="Messages" 
+            isActive={!activeChat} // Highlight if viewing list (logic simplified)
+            onClick={() => { setActiveChat(null); /* Optionally toggle list view */ }} 
+        />
+        
         <div className="w-8 h-[2px] bg-[#35363C] rounded-full mx-auto my-1"></div>
+        
+        <NavIcon icon={<Home size={24} />} label="Home" onClick={() => { setActiveChat(null); onNavigate('home'); }} />
         <NavIcon icon={<Calendar size={24} />} label="Calendar" onClick={() => { setActiveChat(null); onNavigate('calendar'); }} />
         <NavIcon icon={<CheckSquare size={24} />} label="Bucket List" onClick={() => { setActiveChat(null); onNavigate('bucketlist'); }} />
         <NavIcon icon={<Gift size={24} />} label="Surprise" onClick={() => { setActiveChat(null); onNavigate('surprise'); }} />
@@ -118,14 +129,14 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
             </button>
         </div>
 
-        {/* Chat List (Scrollable Area) */}
+        {/* Chat List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar">
             <div className="px-2 pt-2 pb-1 text-[10px] font-bold text-[#949BA4] hover:text-[#dbdee1] cursor-default uppercase">Direct Messages</div>
             {recentChats.map(chat => (
                 <div 
                     key={chat.id} 
                     onClick={() => setActiveChat(chat.otherUser)}
-                    className={`flex items-center gap-3 px-2 py-2 rounded-[4px] cursor-pointer group ${activeChat?.uid === chat.otherUser.uid ? 'bg-[#404249] text-white' : 'text-[#949BA4] hover:bg-[#35373C] hover:text-[#dbdee1]'}`}
+                    className={`flex items-center gap-3 px-2 py-2 rounded-[4px] cursor-pointer group ${activeChat?.uid === chat.otherUser.uid ? 'bg-[var(--theme-primary)]/20 text-white' : 'text-[#949BA4] hover:bg-[#35373C] hover:text-[#dbdee1]'}`}
                 >
                     <div className="relative">
                         <div className="w-8 h-8 rounded-full bg-gray-500 overflow-hidden"><img src={chat.otherUser.avatar} className="w-full h-full object-cover" /></div>
@@ -138,7 +149,7 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
             ))}
         </div>
 
-        {/* USER WIDGET (Pinned to Bottom, Top Layer) */}
+        {/* USER WIDGET (Pinned Bottom) */}
         <div className="mt-auto bg-[#232428]">
             <UserWidget 
                 user={user} 
@@ -150,10 +161,8 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
         </div>
       </div>
 
-      {/* 3. MAIN AREA (Dynamic: Chat OR Page) */}
+      {/* 3. MAIN AREA */}
       <div className="flex-1 bg-[#313338] flex flex-col min-w-0 relative h-full">
-        
-        {/* SCENARIO A: CHAT IS OPEN */}
         {activeChat ? (
             <>
                 <div className="h-12 border-b border-[#26272D] flex items-center justify-between px-4 shadow-sm bg-[#313338] shrink-0">
@@ -182,7 +191,7 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
                                         {!isMe && <span className="text-white font-medium text-sm hover:underline cursor-pointer">{activeChat.name}</span>}
                                         <span className="text-[10px] text-[#949BA4]">{new Date(msg.createdAt?.toMillis()).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                     </div>
-                                    {msg.type === 'image' ? <img src={msg.text} className="rounded-lg max-w-sm mb-1" /> : msg.type === 'audio' ? <div className="bg-[#2B2D31] p-2 rounded-md"><Waveform audioUrl={msg.text} isMe={isMe} /></div> : msg.type === 'call' ? <div className="bg-[#2B2D31] p-3 rounded-md border border-pink-500/50 flex items-center gap-2"><Video size={16} className="text-pink-500"/> <span className="text-white text-sm font-bold">Video Call</span></div> : <div className={`text-[#DBDEE1] text-[15px] leading-[1.375rem]`}>{msg.text}</div>}
+                                    {msg.type === 'image' ? <img src={msg.text} className="rounded-lg max-w-sm mb-1" /> : msg.type === 'audio' ? <div className="bg-[#2B2D31] p-2 rounded-md"><Waveform audioUrl={msg.text} isMe={isMe} /></div> : msg.type === 'call' ? <div className="bg-[#2B2D31] p-3 rounded-md border border-[var(--theme-primary)]/50 flex items-center gap-2"><Video size={16} className="text-[var(--theme-primary)]"/> <span className="text-white text-sm font-bold">Video Call</span></div> : <div className={`text-[#DBDEE1] text-[15px] leading-[1.375rem]`}>{msg.text}</div>}
                                 </div>
                             </div>
                         )
@@ -199,12 +208,11 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
                         ) : (
                             <input value={inputText} onChange={handleInputChange} onKeyDown={(e) => e.key === 'Enter' && sendMessage(e)} placeholder={`Message @${activeChat.name}`} className="bg-transparent flex-1 outline-none text-[#DBDEE1] placeholder-[#949BA4]" autoFocus />
                         )}
-                        <div className="flex items-center gap-2 text-[#B5BAC1]"><button onClick={startRecording} className="hover:text-white"><Mic size={20} /></button>{inputText && <button onClick={sendMessage} className="text-pink-500 hover:text-pink-400"><Send size={20} /></button>}</div>
+                        <div className="flex items-center gap-2 text-[#B5BAC1]"><button onClick={startRecording} className="hover:text-white"><Mic size={20} /></button>{inputText && <button onClick={sendMessage} className="text-[var(--theme-primary)] hover:opacity-80"><Send size={20} /></button>}</div>
                     </div>
                 </div>
             </>
         ) : (
-            // SCENARIO B: NO CHAT -> SHOW PAGE CONTENT
             <div className="flex-1 overflow-y-auto bg-[#313338] relative h-full">
                 {children}
             </div>
@@ -214,11 +222,11 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
   );
 }
 
-function NavIcon({ icon, label, onClick }) {
+function NavIcon({ icon, label, onClick, isActive }) {
     return (
         <div className="group relative flex items-center justify-center w-[48px] h-[48px] cursor-pointer mb-2" onClick={onClick}>
-            <div className="absolute left-0 w-1 h-2 bg-white rounded-r-full opacity-0 group-hover:opacity-100 group-hover:h-5 transition-all duration-200"></div>
-            <div className="w-[48px] h-[48px] bg-[#313338] rounded-[24px] group-hover:rounded-[16px] group-hover:bg-[#5865F2] flex items-center justify-center text-[#23A559] group-hover:text-white transition-all duration-200 shadow-md">
+            {isActive && <div className="absolute left-0 w-1 h-5 bg-white rounded-r-full transition-all duration-200"></div>}
+            <div className={`w-[48px] h-[48px] rounded-[24px] group-hover:rounded-[16px] flex items-center justify-center transition-all duration-200 shadow-md ${isActive ? 'bg-[var(--theme-primary)] text-white rounded-[16px]' : 'bg-[#313338] text-[var(--theme-primary)] group-hover:bg-[var(--theme-primary)] group-hover:text-white'}`}>
                 {icon}
             </div>
             <div className="absolute left-16 bg-black text-white text-xs font-bold px-3 py-1.5 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
