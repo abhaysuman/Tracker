@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageCircle, ChevronDown, Minimize2, ChevronLeft, Plus, Video, Send, Mic, Trash2, Edit2, MoreVertical, Paperclip, Image as ImageIcon, CheckCheck } from 'lucide-react';
-import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, writeBatch, getDocs, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import Waveform from './Waveform'; 
 
@@ -12,6 +12,10 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [recentChats, setRecentChats] = useState([]);
+  
+  // STATUS STATES
+  const [isFriendOnline, setIsFriendOnline] = useState(false);
+  const [isFriendTyping, setIsFriendTyping] = useState(false);
   
   // STATES
   const [editingMsgId, setEditingMsgId] = useState(null);
@@ -26,7 +30,8 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
-  const fileInputRef = useRef(null); // <--- FOR IMAGES
+  const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   // CONFIG
   const CLOUD_NAME = "qbqrzy56"; 
@@ -51,40 +56,69 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
     return () => unsubscribe();
   }, [user]);
 
-  // 2. MESSAGES & READ RECEIPTS
+  // 2. MESSAGES, READ RECEIPTS & TYPING LISTENER
   useEffect(() => {
     if (!activeChat || !user) return;
     const chatId = [user.uid, activeChat.uid].sort().join("_");
-    const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
+    // A. LISTEN FOR MESSAGES
+    const q = query(collection(db, "chats", chatId, "messages"), orderBy("createdAt", "asc"));
+    const unsubscribeMsgs = onSnapshot(q, (snapshot) => {
+      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-
-      // --- READ RECEIPT LOGIC ---
-      // Mark unseen messages from "other" as read
       snapshot.docs.forEach(async (docSnap) => {
         const msg = docSnap.data();
-        if (msg.senderId !== user.uid && !msg.read) {
-           await updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
-        }
+        if (msg.senderId !== user.uid && !msg.read) await updateDoc(doc(db, "chats", chatId, "messages", docSnap.id), { read: true });
       });
     });
-    return () => unsubscribe();
+
+    // B. LISTEN FOR TYPING & ONLINE STATUS (On Chat Document & User Document)
+    const unsubscribeChat = onSnapshot(doc(db, "chats", chatId), (docSnap) => {
+        const data = docSnap.data();
+        if (data?.typing && data.typing[activeChat.uid]) {
+            setIsFriendTyping(true);
+        } else {
+            setIsFriendTyping(false);
+        }
+    });
+
+    const unsubscribeUser = onSnapshot(doc(db, "users", activeChat.uid), (docSnap) => {
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const lastActive = data.lastActive?.toMillis ? data.lastActive.toMillis() : 0;
+            // Online if active in last 5 mins
+            setIsFriendOnline(Date.now() - lastActive < 300000); 
+        }
+    });
+
+    return () => { unsubscribeMsgs(); unsubscribeChat(); unsubscribeUser(); };
   }, [activeChat, user]);
+
+  // --- TYPING HANDLER ---
+  const handleInputChange = async (e) => {
+    setInputText(e.target.value);
+    
+    if (!activeChat) return;
+    const chatId = [user.uid, activeChat.uid].sort().join("_");
+    
+    // Set Typing: True
+    await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: true } }, { merge: true });
+
+    // Clear previous timeout
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    // Set Typing: False after 2 seconds
+    typingTimeoutRef.current = setTimeout(async () => {
+        await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: false } }, { merge: true });
+    }, 2000);
+  };
 
   // --- IMAGE UPLOAD ---
   const handleImageSelect = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setIsUploading(true);
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', UPLOAD_PRESET);
-    formData.append('api_key', API_KEY);
-
+    const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', UPLOAD_PRESET); formData.append('api_key', API_KEY);
     try {
       const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: 'POST', body: formData });
       const data = await res.json();
@@ -112,7 +146,8 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
       participants: [user.uid, activeChat.uid],
       users: [ { uid: user.uid, name: user.displayName, avatar: user.photoURL }, { uid: activeChat.uid, name: activeChat.name || activeChat.displayName, avatar: activeChat.avatar || activeChat.photoURL } ],
       lastMessage: previewText,
-      lastUpdated: serverTimestamp()
+      lastUpdated: serverTimestamp(),
+      typing: { [user.uid]: false } // Stop typing immediately on send
     }, { merge: true });
 
     await addDoc(collection(db, "chats", chatId, "messages"), {
@@ -138,9 +173,21 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
         <AnimatePresence>
           {isExpanded && (
             <motion.div initial={{ y: 400, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 400, opacity: 0 }} transition={{ type: "spring", damping: 25, stiffness: 200 }} className="w-80 h-96 bg-white dark:bg-midnight-card rounded-t-2xl shadow-2xl border border-gray-200 dark:border-white/10 flex flex-col overflow-hidden">
+              
+              {/* HEADER */}
               <div className="bg-pink-500 p-3 flex justify-between items-center text-white shadow-md z-10">
                 {activeChat ? (
-                  <div className="flex items-center gap-2 max-w-[60%]"><button onClick={() => { setActiveChat(null); setShowChatMenu(false); }} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button><div className="w-7 h-7 rounded-full bg-white/20 overflow-hidden border border-white/50 shrink-0"><img src={activeChat.avatar || activeChat.photoURL} className="w-full h-full object-cover" /></div><span className="font-bold text-sm truncate">{activeChat.name || activeChat.displayName}</span></div>
+                  <div className="flex items-center gap-2 max-w-[60%]">
+                    <button onClick={() => { setActiveChat(null); setShowChatMenu(false); }} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button>
+                    <div className="w-7 h-7 rounded-full bg-white/20 overflow-hidden border border-white/50 shrink-0"><img src={activeChat.avatar || activeChat.photoURL} className="w-full h-full object-cover" /></div>
+                    <div className="flex flex-col overflow-hidden">
+                        <span className="font-bold text-sm truncate">{activeChat.name || activeChat.displayName}</span>
+                        {/* ONLINE / TYPING STATUS */}
+                        <span className="text-[10px] opacity-90 font-medium">
+                            {isFriendTyping ? "Typing..." : isFriendOnline ? "● Online" : ""}
+                        </span>
+                    </div>
+                  </div>
                 ) : showNewChat ? (<div className="flex items-center gap-2"><button onClick={() => setShowNewChat(false)} className="hover:bg-white/20 p-1 rounded-full"><ChevronLeft size={20} /></button><span className="font-bold text-sm">New Message</span></div>) : (<span className="font-bold text-lg tracking-tight">Messages</span>)}
                 
                 <div className="flex gap-1 items-center relative">
@@ -158,7 +205,6 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
                 {!activeChat && !showNewChat && <div className="p-2 space-y-1">{recentChats.map(chat => <div key={chat.id} onClick={() => setActiveChat(chat.otherUser)} className="flex items-center gap-3 p-3 hover:bg-white dark:hover:bg-white/5 rounded-xl cursor-pointer transition-colors"><div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-white dark:border-white/10 shadow-sm"><img src={chat.otherUser.avatar} className="w-full h-full object-cover" /></div><div className="flex-1 min-w-0"><h4 className="font-bold text-gray-800 dark:text-white text-sm">{chat.otherUser.name}</h4><p className="text-xs text-gray-500 truncate dark:text-gray-400">{chat.lastMessage}</p></div></div>)}</div>}
                 {!activeChat && showNewChat && <div className="p-2 space-y-1">{friends.map(friend => <div key={friend.uid} onClick={() => startNewChat(friend)} className="flex items-center gap-3 p-3 hover:bg-white dark:hover:bg-white/5 rounded-xl cursor-pointer transition-colors"><div className="w-10 h-10 rounded-full bg-pink-100 overflow-hidden border border-white dark:border-white/10">{friend.photoURL ? <img src={friend.photoURL} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-lg">😊</div>}</div><h4 className="font-bold text-gray-800 dark:text-white text-sm">{friend.name || friend.displayName}</h4></div>)}</div>}
                 
-                {/* MESSAGES VIEW */}
                 {activeChat && (
                   <div className="p-3 space-y-3 min-h-full flex flex-col justify-end pb-2">
                     {messages.map((msg, i) => {
@@ -181,14 +227,10 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
                                 ) : isAudio ? (
                                     <div className="w-64"><Waveform audioUrl={msg.text} isMe={isMe} /></div>
                                 ) : isImage ? (
-                                    // IMAGE RENDER
-                                    <div className={`p-1 rounded-2xl ${isMe ? 'bg-pink-500 rounded-tr-none' : 'bg-white dark:bg-white/10 rounded-tl-none'}`}>
-                                        <img src={msg.text} className="rounded-xl w-48 h-auto object-cover" />
-                                    </div>
+                                    <div className={`p-1 rounded-2xl ${isMe ? 'bg-pink-500 rounded-tr-none' : 'bg-white dark:bg-white/10 rounded-tl-none'}`}><img src={msg.text} className="rounded-xl w-48 h-auto object-cover" /></div>
                                 ) : (
                                     <div className={`px-3 py-2 text-sm ${isMe ? 'bg-pink-500 text-white rounded-2xl rounded-tr-none' : 'bg-white dark:bg-white/10 text-gray-800 dark:text-gray-200 rounded-2xl rounded-tl-none shadow-sm'}`}>{msg.text}{msg.isEdited && <span className="text-[10px] opacity-60 ml-1 block text-right">(edited)</span>}</div>
                                 )}
-                                {/* READ RECEIPT */}
                                 {isMe && <div className="text-[10px] text-right mt-1 opacity-50 flex justify-end">{msg.read ? <CheckCheck size={12} className="text-blue-500" /> : <CheckCheck size={12} />}</div>}
                             </div>
                           )}
@@ -211,13 +253,9 @@ export default function Messenger({ isOpen, onClose, activeChatFriend, user, use
                         </motion.div>
                     ) : (
                         <motion.form key="text-bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onSubmit={sendMessage} className="flex gap-2 items-center">
-                            {/* IMAGE INPUT HIDDEN */}
                             <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
-                            
-                            {/* PAPERCLIP BTN */}
                             <button type="button" onClick={() => fileInputRef.current.click()} className="p-2.5 rounded-full bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500 transition-colors"><ImageIcon size={20} /></button>
-                            
-                            <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2.5 text-sm outline-none dark:text-white transition-all focus:ring-2 focus:ring-pink-100 dark:focus:ring-white/10" autoFocus />
+                            <input value={inputText} onChange={handleInputChange} placeholder="Type a message..." className="flex-1 bg-gray-100 dark:bg-black/20 rounded-full px-4 py-2.5 text-sm outline-none dark:text-white transition-all focus:ring-2 focus:ring-pink-100 dark:focus:ring-white/10" autoFocus />
                             <button type="button" onClick={startRecording} className="p-2.5 rounded-full transition-all bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300 hover:bg-pink-100 hover:text-pink-500"><Mic size={20} /></button>
                             {inputText.trim() && <button type="submit" className="p-2.5 bg-pink-500 text-white rounded-full hover:bg-pink-600 transition-colors shadow-md"><Send size={18} /></button>}
                         </motion.form>
