@@ -16,7 +16,7 @@ import VideoCall from './VideoCall';
 import GlobalDialog from './GlobalDialog';
 import ProfileModal from './ProfileModal'; 
 import SideBarMessenger from './SideBarMessenger'; 
-import { Bell, Phone, Video as VideoIcon, X } from 'lucide-react';
+import { Phone, Video as VideoIcon, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { auth, db } from './firebase';
@@ -38,10 +38,10 @@ function App() {
   const [userData, setUserData] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true); // Default to Dark for Discord vibe
   const [toastMessage, setToastMessage] = useState(null);
 
+  // GLOBAL MODALS
   const [showNotifs, setShowNotifs] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatTarget, setChatTarget] = useState(null);       
@@ -151,29 +151,29 @@ function App() {
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
   const showToast = (msg) => { setToastMessage(null); setTimeout(() => setToastMessage(msg), 10); };
-  const handleLogout = async () => { openDialog("Log Out", "Are you sure?", async () => { await signOut(auth); setCurrentPage('landing'); showToast("Logged out"); }, true, "Log Out"); };
-  const handleSaveMood = async (moodData) => { if (!user) return; const today = new Date(); const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`; const newEntry = { ...moodData, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }; const updatedHistory = { ...moodHistory }; const existingMoods = updatedHistory[dateKey] || []; updatedHistory[dateKey] = [...existingMoods, newEntry]; setMoodHistory(updatedHistory); showToast("Mood Saved!"); await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); };
-  const handleDeleteMood = async (dateKey, indexToDelete) => { openDialog("Delete Memory", "This cannot be undone.", async () => { if (!user) return; const updatedHistory = { ...moodHistory }; const updatedDayList = updatedHistory[dateKey].filter((_, index) => index !== indexToDelete); if (updatedDayList.length === 0) delete updatedHistory[dateKey]; else updatedHistory[dateKey] = updatedDayList; setMoodHistory(updatedHistory); showToast("Memory deleted."); await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); }, true, "Delete"); };
+  const handleLogout = async () => { openDialog("Log Out", "Are you sure you want to log out?", async () => { await signOut(auth); setCurrentPage('landing'); showToast("Logged out successfully"); }, true, "Log Out"); };
+  const handleSaveMood = async (moodData) => { if (!user) return; const today = new Date(); const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`; const newEntry = { ...moodData, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }; const updatedHistory = { ...moodHistory }; const existingMoods = updatedHistory[dateKey] || []; updatedHistory[dateKey] = [...existingMoods, newEntry]; setMoodHistory(updatedHistory); showToast("Mood Saved! ☁️"); await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); };
+  const handleDeleteMood = async (dateKey, indexToDelete) => { openDialog("Delete Memory", "Are you sure? This cannot be undone.", async () => { if (!user) return; const updatedHistory = { ...moodHistory }; const updatedDayList = updatedHistory[dateKey].filter((_, index) => index !== indexToDelete); if (updatedDayList.length === 0) delete updatedHistory[dateKey]; else updatedHistory[dateKey] = updatedDayList; setMoodHistory(updatedHistory); showToast("Memory deleted."); await setDoc(doc(db, "users", user.uid), { history: updatedHistory }, { merge: true }); }, true, "Delete"); };
   const stopRinging = async () => { ringtoneRef.current.pause(); ringtoneRef.current.currentTime = 0; if (incomingCall?.id) deleteDoc(doc(db, "users", user.uid, "notifications", incomingCall.id)); setIncomingCall(null); };
   const answerCall = () => { if (!incomingCall) return; const roomId = incomingCall.roomId; stopRinging(); setActiveCallId(roomId); setCallRole('callee'); };
   const rejectCall = () => { stopRinging(); };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#EBD4F4] dark:bg-midnight-bg">Loading...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#1e1f22]">Loading...</div>;
 
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'dark' : ''}`}>
       
-      {/* 1. PUBLIC PAGES */}
+      {/* PUBLIC PAGES (Without Sidebar) */}
       {currentPage === 'landing' && <LandingPage onLoginSuccess={() => {}} />}
       {currentPage === 'setup' && <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
 
-      {/* 2. THE MAIN APP (DISCORD LAYOUT) */}
+      {/* PROTECTED PAGES (Wrapped in SideBarMessenger) */}
       {user && currentPage !== 'landing' && currentPage !== 'setup' && (
         <SideBarMessenger 
           user={user} 
           userData={userData} 
           friends={userData?.friends || []} 
-          activeChat={chatTarget} // Controls if Chat or Page is shown
+          activeChat={chatTarget} 
           setActiveChat={setChatTarget}
           onStartCall={(roomId) => { setActiveCallId(roomId); setCallRole('caller'); }} 
           onJoinCall={(roomId) => { setActiveCallId(roomId); setCallRole('callee'); }} 
@@ -183,7 +183,7 @@ function App() {
           onOpenProfile={() => setIsProfileOpen(true)}
           onLogout={handleLogout}
         >
-            {/* CONTENT INJECTED INTO MAIN AREA WHEN NOT CHATTING */}
+            {/* CONTENT INJECTED INTO MAIN AREA */}
             {currentPage === 'home' && <HomePage onNavigate={setCurrentPage} onSaveMood={handleSaveMood} />}
             {currentPage === 'calendar' && <CalendarPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
             {currentPage === 'insights' && <InsightsPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
@@ -195,7 +195,7 @@ function App() {
         </SideBarMessenger>
       )}
 
-      {/* 3. GLOBAL MODALS */}
+      {/* GLOBAL MODALS & OVERLAYS */}
       <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
       <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} userData={userData} />
       <UserProfileModal isOpen={!!viewProfileUid} onClose={() => setViewProfileUid(null)} targetUid={viewProfileUid} onMessageClick={(friendData) => { setChatTarget(friendData); setViewProfileUid(null); }} />
