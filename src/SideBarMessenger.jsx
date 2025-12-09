@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageCircle, ChevronLeft, Plus, Video, Send, Mic, Trash2, MoreVertical, Search, X, Home, Calendar, BarChart2, Gift, CheckSquare, CheckCheck, Image as ImageIcon } from 'lucide-react';
+import { MessageCircle, ChevronLeft, Plus, Video, Send, Mic, Trash2, MoreVertical, Image as ImageIcon, CheckCheck, Search, X, Home, Calendar, BarChart2, Gift, CheckSquare } from 'lucide-react';
 import { collection, query, where, orderBy, addDoc, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, deleteDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import Waveform from './Waveform'; 
@@ -78,7 +78,7 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
     return () => { unsubscribeMsgs(); unsubscribeChat(); unsubscribeUser(); };
   }, [activeChat, user]);
 
-  // --- ACTIONS (Simplified) ---
+  // --- ACTIONS ---
   const handleInputChange = async (e) => { setInputText(e.target.value); if(!activeChat) return; const chatId = [user.uid, activeChat.uid].sort().join("_"); await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: true } }, { merge: true }); if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = setTimeout(async () => { await setDoc(doc(db, "chats", chatId), { typing: { [user.uid]: false } }, { merge: true }); }, 2000); };
   const handleImageSelect = async (e) => { const file = e.target.files[0]; if (!file) return; setIsUploading(true); const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', UPLOAD_PRESET); formData.append('api_key', API_KEY); try { const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: 'POST', body: formData }); const data = await res.json(); if (data.secure_url) await sendToFirebase(data.secure_url, 'image'); } catch (err) { console.error(err); } setIsUploading(false); };
   const sendToFirebase = async (content, type) => { const chatId = [user.uid, activeChat.uid].sort().join("_"); const chatRef = doc(db, "chats", chatId); let previewText = content; if (type === 'call') previewText = '🎥 Video Call'; if (type === 'audio') previewText = '🎤 Voice Message'; if (type === 'image') previewText = '📷 Photo'; await setDoc(chatRef, { participants: [user.uid, activeChat.uid], users: [ { uid: user.uid, name: user.displayName, avatar: user.photoURL }, { uid: activeChat.uid, name: activeChat.name || activeChat.displayName, avatar: activeChat.avatar || activeChat.photoURL } ], lastMessage: previewText, lastUpdated: serverTimestamp(), typing: { [user.uid]: false } }, { merge: true }); await addDoc(collection(db, "chats", chatId, "messages"), { text: content, type: type, senderId: user.uid, createdAt: serverTimestamp(), read: false }); };
@@ -90,14 +90,21 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
   const startVideoCall = async () => { if (!activeChat) return; const roomId = `call_${user.uid}_${Date.now()}`; if (onStartCall) onStartCall(roomId); await sendToFirebase(roomId, 'call'); try { await addDoc(collection(db, "users", activeChat.uid, "notifications"), { type: 'call_invite', message: 'is calling! 🎥', roomId: roomId, senderUid: user.uid, senderName: user.displayName, timestamp: serverTimestamp(), read: false }); } catch (e) {} };
   const requestClearChat = () => { setShowChatMenu(false); openDialog("Clear Chat", "Delete entire history?", async () => { const chatId = [user.uid, activeChat.uid].sort().join("_"); const q = query(collection(db, "chats", chatId, "messages")); const snapshot = await getDocs(q); const batch = writeBatch(db); snapshot.docs.forEach((doc) => batch.delete(doc.ref)); batch.update(doc(db, "chats", chatId), { lastMessage: "" }); await batch.commit(); }, true, "Clear"); };
 
-  // --- RENDER (FIXED LAYOUT) ---
+  // --- RENDER ---
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#1e1f22] font-sans">
       
-      {/* 1. LEFT RAIL (Permanent) */}
+      {/* 1. LEFT RAIL (Permanent Navigation) */}
       <div className="w-[72px] bg-white dark:bg-[#1e1f22] flex flex-col items-center py-4 gap-2 border-r border-gray-200 dark:border-[#1e1f22] shrink-0 z-50 shadow-sm">
         
-        {/* MESSAGES TOGGLE */}
+        {/* 1. HOME (Top) */}
+        <NavIcon 
+            icon={<Home size={28} />} 
+            label="Home" 
+            onClick={() => { setActiveChat(null); onNavigate('home'); }} 
+        />
+
+        {/* 2. MESSAGES (2nd) */}
         <NavIcon 
             icon={<MessageCircle size={28} />} 
             label="Messages" 
@@ -105,16 +112,17 @@ export default function SideBarMessenger({ user, userData, friends = [], activeC
             onClick={() => { setShowSidebar(!showSidebar); }} 
         />
         
+        {/* DIVIDER */}
         <div className="w-8 h-[2px] bg-gray-200 dark:bg-[#35363C] rounded-full mx-auto my-1"></div>
         
-        <NavIcon icon={<Home size={24} />} label="Home" onClick={() => onNavigate('home')} />
+        {/* REST OF ICONS */}
         <NavIcon icon={<Calendar size={24} />} label="Calendar" onClick={() => onNavigate('calendar')} />
         <NavIcon icon={<CheckSquare size={24} />} label="Bucket List" onClick={() => onNavigate('bucketlist')} />
         <NavIcon icon={<Gift size={24} />} label="Surprise" onClick={() => onNavigate('surprise')} />
         <NavIcon icon={<BarChart2 size={24} />} label="Insights" onClick={() => onNavigate('insights')} />
       </div>
 
-      {/* 2. SIDEBAR PANEL (Collapsible) */}
+      {/* 2. SIDEBAR PANEL (Collapsible Friend List) */}
       <AnimatePresence mode="popLayout">
         {showSidebar && (
             <motion.div 
