@@ -16,12 +16,14 @@ import Messenger from './Messenger';
 import UserProfileModal from './UserProfileModal';
 import VideoCall from './VideoCall'; 
 import GlobalDialog from './GlobalDialog';
-import { Settings, Users, Bell, Phone, Video as VideoIcon, X, CheckSquare } from 'lucide-react';
+import UserWidget from './UserWidget'; // <--- NEW IMPORT
+import ProfileModal from './ProfileModal'; // <--- MOVED HERE
+import { Users, Bell, Phone, Video as VideoIcon, X, CheckSquare } from 'lucide-react'; // Removed Settings icon import
 import { AnimatePresence, motion } from 'framer-motion';
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, onSnapshot, collection, query, orderBy, limit, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore'; // Added updateDoc, serverTimestamp
+import { doc, setDoc, onSnapshot, collection, query, orderBy, limit, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 // THEME CONFIG
 const THEMES = {
@@ -41,13 +43,16 @@ function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
 
+  // GLOBAL MODALS
   const [showNotifs, setShowNotifs] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatTarget, setChatTarget] = useState(null);       
   const [viewProfileUid, setViewProfileUid] = useState(null); 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogConfig, setDialogConfig] = useState(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false); // <--- NEW STATE FOR PROFILE
 
+  // CALL STATE
   const [activeCallId, setActiveCallId] = useState(null); 
   const [callRole, setCallRole] = useState(null);         
   const [incomingCall, setIncomingCall] = useState(null); 
@@ -70,20 +75,13 @@ function App() {
     if ('Notification' in window && Notification.permission !== 'granted') Notification.requestPermission();
   }, []);
 
-  // --- ONLINE STATUS HEARTBEAT (NEW) ---
+  // ONLINE HEARTBEAT
   useEffect(() => {
     if (!user) return;
     const userRef = doc(db, "users", user.uid);
-    
-    // Update immediately, then every 2 minutes
-    const updateStatus = async () => {
-      try {
-        await updateDoc(userRef, { lastActive: serverTimestamp() });
-      } catch (e) { console.error("Heartbeat failed", e); }
-    };
-    
+    const updateStatus = async () => { try { await updateDoc(userRef, { lastActive: serverTimestamp() }); } catch (e) {} };
     updateStatus();
-    const interval = setInterval(updateStatus, 120000); // 2 mins
+    const interval = setInterval(updateStatus, 120000); 
     return () => clearInterval(interval);
   }, [user]);
 
@@ -93,20 +91,8 @@ function App() {
         const t = THEMES[userData.theme];
         const styleId = 'dynamic-theme-style';
         let styleTag = document.getElementById(styleId);
-        if (!styleTag) {
-            styleTag = document.createElement('style');
-            styleTag.id = styleId;
-            document.head.appendChild(styleTag);
-        }
-        styleTag.innerHTML = `
-            :root { --theme-primary: ${t.primary}; --theme-light: ${t.light}; --theme-dark: ${t.dark}; }
-            .bg-pink-500, .bg-pink-400 { background-color: var(--theme-primary) !important; }
-            .text-pink-500, .text-pink-600, .text-pink-400 { color: var(--theme-primary) !important; }
-            .border-pink-500, .border-pink-200 { border-color: var(--theme-primary) !important; }
-            .bg-pink-100, .bg-pink-50 { background-color: var(--theme-light) !important; }
-            .from-pink-400 { --tw-gradient-from: var(--theme-primary) !important; }
-            .to-purple-400 { --tw-gradient-to: var(--theme-dark) !important; }
-        `;
+        if (!styleTag) { styleTag = document.createElement('style'); styleTag.id = styleId; document.head.appendChild(styleTag); }
+        styleTag.innerHTML = `:root { --theme-primary: ${t.primary}; --theme-light: ${t.light}; --theme-dark: ${t.dark}; } .bg-pink-500, .bg-pink-400 { background-color: var(--theme-primary) !important; } .text-pink-500, .text-pink-600, .text-pink-400 { color: var(--theme-primary) !important; } .border-pink-500, .border-pink-200 { border-color: var(--theme-primary) !important; } .bg-pink-100, .bg-pink-50 { background-color: var(--theme-light) !important; } .from-pink-400 { --tw-gradient-from: var(--theme-primary) !important; } .to-purple-400 { --tw-gradient-to: var(--theme-dark) !important; }`;
     }
   }, [userData?.theme]);
 
@@ -140,7 +126,7 @@ function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // NOTIFICATION LISTENER
+  // NOTIFICATIONS LISTENER
   useEffect(() => {
     if (!user) return;
     ringtoneRef.current.loop = true;
@@ -183,18 +169,37 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'dark' : ''}`}>
       {currentPage === 'landing' && <LandingPage onLoginSuccess={() => {}} />}
-      {currentPage === 'setup' && <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />}
+      
+      {currentPage === 'setup' && (
+        <SetupPage user={user} userData={userData} onComplete={() => setCurrentPage('home')} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+      )}
+
       {currentPage === 'home' && <HomePage onNavigate={setCurrentPage} onSaveMood={handleSaveMood} />}
       {currentPage === 'calendar' && <CalendarPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
       {currentPage === 'insights' && <InsightsPage onNavigate={setCurrentPage} savedMoods={moodHistory} />}
       {currentPage === 'history' && <HistoryPage onNavigate={setCurrentPage} savedMoods={moodHistory} onDeleteMood={handleDeleteMood} />}
       {currentPage === 'surprise' && <SurprisePage onNavigate={setCurrentPage} />}
       {currentPage === 'bucketlist' && <BucketListPage onNavigate={setCurrentPage} />}
+      
       {currentPage === 'settings' && <SettingsPage onNavigate={setCurrentPage} isDarkMode={isDarkMode} toggleTheme={toggleTheme} onLogout={handleLogout} user={user} userData={userData} openDialog={openDialog} />}
       {currentPage === 'friends' && <FriendsPage onNavigate={setCurrentPage} currentUser={user} userData={userData} showToast={showToast} onViewProfile={(uid) => setViewProfileUid(uid)} openDialog={openDialog} />}
 
       {user && currentPage !== 'landing' && currentPage !== 'setup' && <FriendActivityTab friends={userData?.friends || []} />}
       <NotificationsModal isOpen={showNotifs} onClose={() => setShowNotifs(false)} user={user} />
+
+      {/* --- USER WIDGET (Bottom Left Corner) --- */}
+      {user && currentPage !== 'landing' && currentPage !== 'setup' && (
+        <UserWidget 
+            user={user} 
+            userData={userData} 
+            onOpenSettings={() => setCurrentPage('settings')}
+            onOpenProfile={() => setIsProfileOpen(true)}
+            onLogout={handleLogout}
+        />
+      )}
+
+      {/* --- PROFILE MODAL (Global) --- */}
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} user={user} userData={userData} />
 
       {user && <Messenger isOpen={true} activeChatFriend={chatTarget} onClose={() => setChatTarget(null)} user={user} userData={userData} friends={userData?.friends || []} onStartCall={(roomId) => { setActiveCallId(roomId); setCallRole('caller'); }} onJoinCall={(roomId) => { setActiveCallId(roomId); setCallRole('callee'); }} openDialog={openDialog} />}
       <UserProfileModal isOpen={!!viewProfileUid} onClose={() => setViewProfileUid(null)} targetUid={viewProfileUid} onMessageClick={(friendData) => { setChatTarget(friendData); setViewProfileUid(null); }} />
@@ -203,9 +208,9 @@ function App() {
       <GlobalDialog isOpen={dialogOpen} config={dialogConfig} onClose={() => setDialogOpen(false)} />
       <AnimatePresence>{toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}</AnimatePresence>
 
+      {/* FLOATING BUTTONS (Removed Settings Button from here) */}
       {currentPage !== 'landing' && currentPage !== 'setup' && (
         <>
-          {currentPage !== 'settings' && <button onClick={() => setCurrentPage('settings')} className="fixed bottom-6 left-6 z-50 p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><Settings size={24} /></button>}
           <div className="fixed top-6 right-6 z-50 flex gap-3">
             {currentPage !== 'bucketlist' && <button onClick={() => setCurrentPage('bucketlist')} className="p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><CheckSquare size={24} /></button>}
             <button onClick={() => setShowNotifs(true)} className="relative p-3 bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md text-gray-400 dark:text-gray-200 rounded-full shadow-lg border border-white/50 dark:border-white/10 hover:text-pink-400 transition-all hover:scale-110 active:scale-95"><Bell size={24} />{unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white dark:border-midnight-card">{unreadCount}</span>}</button>
