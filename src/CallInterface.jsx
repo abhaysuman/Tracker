@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, Maximize2, Minimize2, User } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MonitorOff, Settings, MoreHorizontal } from 'lucide-react';
 import { doc, onSnapshot, updateDoc, setDoc, deleteDoc, addDoc, collection, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -12,10 +11,10 @@ const SERVERS = {
 
 export default function CallInterface({ callId, role, user, activeChat, callType, onClose }) {
   const [micOn, setMicOn] = useState(true);
-  const [cameraOn, setCameraOn] = useState(callType === 'video'); // <--- AUTO-ENABLE CAM FOR VIDEO CALLS
+  const [cameraOn, setCameraOn] = useState(callType === 'video');
   const [screenSharing, setScreenSharing] = useState(false);
-  const [minimized, setMinimized] = useState(false);
   const [remoteStream, setRemoteStream] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState("Connecting...");
   
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -24,57 +23,73 @@ export default function CallInterface({ callId, role, user, activeChat, callType
 
   useEffect(() => {
     const startCall = async () => {
-      // 1. Get Media based on Call Type
-      localStream.current = await navigator.mediaDevices.getUserMedia({ 
-        video: callType === 'video', // Start with video only if video call
-        audio: true 
-      });
-      
-      localStream.current.getTracks().forEach((track) => {
-        peerConnection.current.addTrack(track, localStream.current);
-      });
-
-      if (localVideoRef.current && callType === 'video') {
-        localVideoRef.current.srcObject = localStream.current;
-      }
-
-      peerConnection.current.ontrack = (event) => {
-        setRemoteStream(event.streams[0]);
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-      };
-
-      peerConnection.current.onicecandidate = async (event) => {
-        if (event.candidate) {
-          const cRef = collection(db, "calls", callId, role === 'caller' ? "callerCandidates" : "calleeCandidates");
-          await addDoc(cRef, event.candidate.toJSON());
-        }
-      };
-
-      if (role === 'caller') {
-        const offer = await peerConnection.current.createOffer();
-        await peerConnection.current.setLocalDescription(offer);
-        await setDoc(doc(db, "calls", callId), { 
-          offer: { type: offer.type, sdp: offer.sdp },
-          participants: [user.uid, activeChat.uid],
-          type: callType 
+      try {
+        // 1. Always get Audio first (Critical for voice calls)
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: true, 
+          video: callType === 'video' 
         });
-      } else {
-        const callDoc = await getDoc(doc(db, "calls", callId));
-        const data = callDoc.data();
-        if (data?.offer) {
-          await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.offer));
-          const answer = await peerConnection.current.createAnswer();
-          await peerConnection.current.setLocalDescription(answer);
-          await updateDoc(doc(db, "calls", callId), { answer: { type: answer.type, sdp: answer.sdp } });
+        
+        localStream.current = stream;
+        
+        // Add tracks to PC
+        stream.getTracks().forEach((track) => {
+          peerConnection.current.addTrack(track, stream);
+        });
+
+        // Set Local Video if needed
+        if (localVideoRef.current && (callType === 'video')) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true; // Mute local preview
         }
+
+        // 2. Handle Remote Stream
+        peerConnection.current.ontrack = (event) => {
+          console.log("Stream received!");
+          setRemoteStream(event.streams[0]);
+          setConnectionStatus("Connected");
+          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
+        };
+
+        // 3. ICE Candidates
+        peerConnection.current.onicecandidate = async (event) => {
+          if (event.candidate) {
+            const cRef = collection(db, "calls", callId, role === 'caller' ? "callerCandidates" : "calleeCandidates");
+            await addDoc(cRef, event.candidate.toJSON());
+          }
+        };
+
+        // 4. Signaling
+        if (role === 'caller') {
+          const offer = await peerConnection.current.createOffer();
+          await peerConnection.current.setLocalDescription(offer);
+          await setDoc(doc(db, "calls", callId), { 
+            offer: { type: offer.type, sdp: offer.sdp },
+            participants: [user.uid, activeChat.uid],
+            type: callType 
+          });
+        } else {
+          const callDoc = await getDoc(doc(db, "calls", callId));
+          const data = callDoc.data();
+          if (data?.offer) {
+            await peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await peerConnection.current.createAnswer();
+            await peerConnection.current.setLocalDescription(answer);
+            await updateDoc(doc(db, "calls", callId), { answer: { type: answer.type, sdp: answer.sdp } });
+          }
+        }
+      } catch (err) {
+        console.error("Media Error:", err);
+        setConnectionStatus("Failed to access media");
       }
     };
 
     startCall();
 
+    // Listeners
     const unsubCall = onSnapshot(doc(db, "calls", callId), (snapshot) => {
       const data = snapshot.data();
-      if (!data) { onClose(); return; } // End call if room deleted
+      if (!data) { onClose(); return; } 
       if (role === 'caller' && data.answer && !peerConnection.current.currentRemoteDescription) {
         peerConnection.current.setRemoteDescription(new RTCSessionDescription(data.answer));
       }
@@ -95,25 +110,66 @@ export default function CallInterface({ callId, role, user, activeChat, callType
     };
   }, []);
 
+  // --- CONTROLS ---
+
   const toggleMic = () => {
-    const audioTrack = localStream.current?.getAudioTracks()[0];
-    if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; setMicOn(audioTrack.enabled); }
+    if (localStream.current) {
+      const audioTrack = localStream.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setMicOn(audioTrack.enabled);
+      }
+    }
   };
 
   const toggleCamera = async () => {
     if (cameraOn) {
       const videoTrack = localStream.current?.getVideoTracks()[0];
-      if (videoTrack) { videoTrack.stop(); localStream.current.removeTrack(videoTrack); }
-      const sender = peerConnection.current.getSenders().find(s => s.track?.kind === 'video');
-      if (sender) peerConnection.current.removeTrack(sender);
+      if (videoTrack) { 
+        videoTrack.stop();
+        localStream.current.removeTrack(videoTrack);
+        const sender = peerConnection.current.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) peerConnection.current.removeTrack(sender);
+      }
       setCameraOn(false);
     } else {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      const videoTrack = stream.getVideoTracks()[0];
-      localStream.current.addTrack(videoTrack);
-      peerConnection.current.addTrack(videoTrack, localStream.current);
-      if (localVideoRef.current) localVideoRef.current.srcObject = localStream.current;
-      setCameraOn(true);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const videoTrack = stream.getVideoTracks()[0];
+        localStream.current.addTrack(videoTrack);
+        peerConnection.current.addTrack(videoTrack, localStream.current);
+        if (localVideoRef.current) localVideoRef.current.srcObject = localStream.current;
+        setCameraOn(true);
+      } catch(e) { console.error(e); }
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    if (screenSharing) {
+        // Stop Sharing
+        const track = localStream.current.getVideoTracks()[0];
+        if (track) track.stop();
+        setScreenSharing(false);
+        setCameraOn(false);
+        // Switch back to camera logic could go here
+    } else {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const screenTrack = stream.getVideoTracks()[0];
+            
+            const sender = peerConnection.current.getSenders().find(s => s.track?.kind === 'video');
+            if (sender) sender.replaceTrack(screenTrack);
+            else peerConnection.current.addTrack(screenTrack, localStream.current);
+
+            if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+            setScreenSharing(true);
+            setCameraOn(true); 
+
+            screenTrack.onended = () => {
+                setScreenSharing(false);
+                setCameraOn(false);
+            };
+        } catch (e) { console.error(e); }
     }
   };
 
@@ -122,37 +178,77 @@ export default function CallInterface({ callId, role, user, activeChat, callType
     onClose();
   };
 
-  if (minimized) {
-    return (
-      <motion.div drag className="fixed bottom-20 right-4 w-64 h-36 bg-[#111214] border border-[#2b2d31] rounded-xl shadow-2xl z-[200] overflow-hidden flex flex-col">
-        <div className="flex-1 bg-[#1e1f22] relative">
-            {remoteStream ? <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><img src={activeChat?.avatar} className="w-12 h-12 rounded-full opacity-50" /></div>}
-            <div className="absolute inset-0 hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 hover:opacity-100"><button onClick={() => setMinimized(false)} className="p-2 bg-black/50 rounded-full text-white"><Maximize2 size={20} /></button></div>
-        </div>
-      </motion.div>
-    );
-  }
-
+  // --- RENDER (SPLIT SCREEN COMPATIBLE) ---
   return (
-    <div className="fixed inset-0 z-[200] bg-[#0e0e10] flex flex-col text-white font-sans">
-      <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/50 to-transparent">
-        <div className="flex items-center gap-3"><h2 className="font-bold text-gray-200">{callType === 'video' ? 'Video' : 'Voice'} Connected</h2><span className="text-gray-400 text-sm">/ {activeChat?.name}</span></div>
-        <button onClick={() => setMinimized(true)} className="p-2 hover:bg-white/10 rounded-lg text-gray-300"><Minimize2 size={24} /></button>
-      </div>
-
-      <div className="flex-1 flex p-4 gap-4 justify-center items-center overflow-hidden relative">
-        <div className="flex-1 max-w-4xl h-full max-h-[80vh] bg-[#1e1f22] rounded-2xl overflow-hidden relative flex items-center justify-center border border-[#2b2d31] shadow-xl">
-            {remoteStream ? <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" /> : <div className="flex flex-col items-center animate-pulse"><div className="w-24 h-24 rounded-full border-4 border-[#2b2d31] bg-[#2b2d31] overflow-hidden mb-4 shadow-lg"><img src={activeChat?.avatar || activeChat?.photoURL} className="w-full h-full object-cover" /></div><h3 className="text-xl font-bold text-white">{activeChat?.name}</h3><p className="text-gray-400">Connecting...</p></div>}
-            <motion.div drag dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} className="absolute bottom-4 right-4 w-48 h-32 bg-black rounded-xl overflow-hidden shadow-2xl border border-white/10">
-                {cameraOn ? <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover flip-horizontal" /> : <div className="w-full h-full flex items-center justify-center bg-[#2b2d31]"><User size={32} className="text-gray-500" /></div>}
-            </motion.div>
+    <div className="w-full h-full bg-black flex flex-col relative overflow-hidden">
+      
+      {/* 1. MAIN VIDEO GRID */}
+      <div className="flex-1 flex items-center justify-center p-2 gap-2 relative">
+        
+        {/* REMOTE STREAM (Big) */}
+        <div className="flex-1 h-full max-h-full bg-[#1e1f22] rounded-xl flex items-center justify-center relative overflow-hidden">
+            {remoteStream && remoteStream.getVideoTracks().length > 0 ? (
+                <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
+            ) : (
+                <div className="flex flex-col items-center">
+                    <div className="w-24 h-24 rounded-full bg-gray-700 border-4 border-[#1e1f22] shadow-lg mb-4 overflow-hidden">
+                        <img src={activeChat?.avatar || activeChat?.photoURL} className="w-full h-full object-cover" />
+                    </div>
+                    <h2 className="text-white font-bold text-xl">{activeChat?.name}</h2>
+                    <p className="text-gray-400 text-sm animate-pulse">{connectionStatus}</p>
+                </div>
+            )}
         </div>
+
+        {/* LOCAL PREVIEW (Floating PIP) */}
+        {(cameraOn || screenSharing) && (
+            <div className="absolute bottom-20 right-4 w-48 h-32 bg-gray-900 rounded-lg shadow-xl overflow-hidden border border-white/10 z-20">
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            </div>
+        )}
       </div>
 
-      <div className="h-20 bg-[#1e1f22] flex items-center justify-center gap-4 pb-4">
-        <button onClick={toggleMic} className={`p-4 rounded-full transition-all ${micOn ? 'bg-[#2b2d31] hover:bg-[#35373c] text-white' : 'bg-white text-black'}`}>{micOn ? <Mic size={24} /> : <MicOff size={24} />}</button>
-        <button onClick={endCall} className="px-8 py-4 bg-red-500 hover:bg-red-600 rounded-full text-white shadow-lg transition-all active:scale-95"><PhoneOff size={28} /></button>
-        <button onClick={toggleCamera} className={`p-4 rounded-full transition-all ${cameraOn ? 'bg-white text-black' : 'bg-[#2b2d31] hover:bg-[#35373c] text-white'}`}>{cameraOn ? <Video size={24} /> : <VideoOff size={24} />}</button>
+      {/* 2. DISCORD STYLE CONTROL BAR */}
+      <div className="h-16 bg-[#000000] flex items-center justify-center gap-2 pb-2">
+        
+        {/* Cam & Mic Group */}
+        <div className="flex items-center gap-2 bg-[#1e1f22] p-1.5 rounded-xl">
+            <button 
+                onClick={toggleCamera} 
+                className={`p-3 rounded-lg transition-colors ${cameraOn ? 'bg-white text-black' : 'text-white hover:bg-[#2b2d31]'}`}
+                title="Turn On/Off Camera"
+            >
+                {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
+            </button>
+            <button 
+                onClick={toggleMic} 
+                className={`p-3 rounded-lg transition-colors ${micOn ? 'text-white hover:bg-[#2b2d31]' : 'bg-white text-black'}`}
+                title="Mute/Unmute"
+            >
+                {micOn ? <Mic size={20} /> : <MicOff size={20} />}
+            </button>
+        </div>
+
+        {/* Screen Share */}
+        <div className="flex items-center gap-2 bg-[#1e1f22] p-1.5 rounded-xl">
+            <button 
+                onClick={toggleScreenShare} 
+                className={`p-3 rounded-lg transition-colors ${screenSharing ? 'bg-[#23a559] text-white' : 'text-white hover:bg-[#2b2d31]'}`}
+                title="Share Screen"
+            >
+                {screenSharing ? <MonitorOff size={20} /> : <Monitor size={20} />}
+            </button>
+        </div>
+
+        {/* End Call */}
+        <button 
+            onClick={endCall} 
+            className="p-3 bg-[#da373c] hover:bg-[#a1282c] rounded-xl text-white transition-colors px-6"
+            title="Disconnect"
+        >
+            <PhoneOff size={24} />
+        </button>
+
       </div>
     </div>
   );
