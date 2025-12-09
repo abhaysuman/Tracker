@@ -1,144 +1,101 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronLeft, ChevronRight, X, Home, History, Calendar as CalIcon, BarChart2, Gift } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Frown, Meh, Smile } from 'lucide-react';
 
 export default function CalendarPage({ onNavigate, savedMoods }) {
-  const [currentDate, setCurrentDate] = useState(new Date()); 
-  const [selectedDay, setSelectedDay] = useState(null);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const nextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  const getDaysInMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };
 
-  const prevMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  const getFirstDayOfMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   };
 
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth();
-  
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfMonth = new Date(year, month, 1).getDay();
+  const changeMonth = (offset) => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1));
+  };
 
-  const days = [];
-  for (let i = 0; i < firstDayOfMonth; i++) days.push(null);
-  for (let i = 1; i <= daysInMonth; i++) days.push(i);
+  const renderCalendarDays = () => {
+    const daysInMonth = getDaysInMonth(currentDate);
+    const firstDay = getFirstDayOfMonth(currentDate);
+    const days = [];
 
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<div key={`empty-${i}`} className="h-10 sm:h-14"></div>);
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const dayMoods = savedMoods[dateKey] || [];
+      const primaryMood = dayMoods.length > 0 ? dayMoods[dayMoods.length - 1] : null;
+
+      days.push(
+        <motion.div 
+          key={day} 
+          whileHover={{ scale: 1.1 }}
+          className={`h-10 sm:h-14 rounded-xl flex flex-col items-center justify-center relative cursor-pointer border ${primaryMood ? 'border-pink-200 bg-pink-50 dark:bg-pink-900/20 dark:border-pink-800' : 'border-transparent hover:bg-gray-50 dark:hover:bg-white/5'}`}
+        >
+          <span className={`text-xs font-bold ${primaryMood ? 'text-pink-500' : 'text-gray-400'}`}>{day}</span>
+          {primaryMood && <span className="text-lg leading-none mt-1">{primaryMood.emoji}</span>}
+          {dayMoods.length > 1 && (
+            <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-blue-400 rounded-full"></div>
+          )}
+        </motion.div>
+      );
+    }
+    return days;
+  };
 
   return (
-    <div className="min-h-screen bg-[#EBD4F4] dark:bg-midnight-bg pb-24 font-sans selection:bg-pink-200 flex flex-col items-center transition-colors duration-300">
+    <div className="min-h-full pb-10 font-sans p-6 bg-white dark:bg-[#313338] transition-colors duration-300">
       
-      <div className="pt-12 pb-8 text-center">
-        <h1 className="text-3xl font-medium text-gray-800 dark:text-white tracking-wide font-mono transition-colors">
-          Mood Calendar
-        </h1>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Mood Calendar</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Your emotional journey</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-100 dark:bg-white/10 rounded-full hover:bg-pink-100 dark:hover:bg-pink-900/30 text-gray-600 dark:text-gray-300 transition-colors"><ChevronLeft size={20} /></button>
+          <button onClick={() => changeMonth(1)} className="p-2 bg-gray-100 dark:bg-white/10 rounded-full hover:bg-pink-100 dark:hover:bg-pink-900/30 text-gray-600 dark:text-gray-300 transition-colors"><ChevronRight size={20} /></button>
+        </div>
       </div>
 
-      <div className="bg-[#FFF5F5] dark:bg-midnight-card rounded-[2rem] p-6 shadow-sm w-[90%] max-w-md transition-colors duration-300">
+      {/* Calendar Card */}
+      <div className="bg-gray-50 dark:bg-[#2b2d31] rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-white/5">
+        <h2 className="text-center font-bold text-lg text-gray-700 dark:text-white mb-6">
+          {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        </h2>
         
-        {/* Month Navigation */}
-        <div className="flex justify-between items-center mb-6 px-4">
-          <button onClick={prevMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-gray-600 dark:text-gray-300">
-            <ChevronLeft size={24} />
-          </button>
-          <span className="text-xl font-medium text-gray-700 dark:text-white w-40 text-center">
-            {monthNames[month]} {year}
-          </span>
-          <button onClick={nextMonth} className="p-2 hover:bg-black/5 dark:hover:bg-white/10 rounded-full transition-colors text-gray-600 dark:text-gray-300">
-            <ChevronRight size={24} />
-          </button>
-        </div>
-
         <div className="grid grid-cols-7 gap-2 mb-2 text-center">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-            <div key={d} className="text-xs font-semibold text-gray-500 dark:text-gray-400">{d}</div>
+          {['S','M','T','W','T','F','S'].map(d => (
+            <div key={d} className="text-xs font-bold text-gray-400 uppercase">{d}</div>
           ))}
         </div>
-
-        <div className="grid grid-cols-7 gap-3">
-          {days.map((day, index) => {
-            if (day === null) return <div key={`empty-${index}`}></div>;
-
-            const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dayMoods = savedMoods[dateKey]; 
-            const latestMood = dayMoods && dayMoods.length > 0 ? dayMoods[dayMoods.length - 1] : null;
-
-            return (
-              <motion.button
-                key={day}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => latestMood && setSelectedDay({ day, moods: dayMoods })}
-                className={`
-                  aspect-square rounded-2xl flex flex-col items-center justify-center relative shadow-sm transition-all
-                  ${latestMood 
-                    ? 'bg-pink-100 ring-2 ring-pink-200 dark:bg-pink-900/50 dark:ring-pink-500' 
-                    : 'bg-white hover:bg-gray-50 dark:bg-white/5 dark:hover:bg-white/10'}
-                `}
-              >
-                <span className={`text-xs ${latestMood ? 'text-pink-800 font-bold dark:text-pink-200' : 'text-gray-400 dark:text-gray-500'}`}>
-                  {day}
-                </span>
-                {latestMood && <span className="text-xl mt-1">{latestMood.emoji}</span>}
-              </motion.button>
-            );
-          })}
+        
+        <div className="grid grid-cols-7 gap-2">
+          {renderCalendarDays()}
         </div>
       </div>
 
-      <AnimatePresence>
-        {selectedDay && (
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-[2px] p-4"
-            onClick={() => setSelectedDay(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.8 }} animate={{ scale: 1 }} exit={{ scale: 0.8 }}
-              className="bg-white dark:bg-midnight-card rounded-[2rem] p-6 w-72 shadow-2xl relative flex flex-col items-center max-h-[60vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button onClick={() => setSelectedDay(null)} className="absolute top-4 right-4 text-gray-400 dark:text-gray-500">
-                <X size={24} />
-              </button>
-              
-              <h3 className="text-gray-500 dark:text-gray-300 font-bold mb-6 mt-2">
-                {monthNames[month]} {selectedDay.day}
-              </h3>
-
-              <div className="w-full space-y-3">
-                {selectedDay.moods.map((mood, idx) => (
-                  <div key={idx} className="flex items-center gap-4 bg-pink-50 dark:bg-pink-900/20 p-3 rounded-2xl">
-                    <span className="text-4xl filter drop-shadow-sm">{mood.emoji}</span>
-                    <div className="flex flex-col text-left">
-                      <span className="font-bold text-gray-700 dark:text-white">{mood.label}</span>
-                      <span className="text-xs text-gray-400">Log #{idx + 1}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-sm bg-white/80 dark:bg-midnight-card/80 backdrop-blur-md rounded-full shadow-lg border border-white/50 dark:border-white/10 px-6 py-4 flex justify-between items-center z-40 transition-colors duration-300">
-        <NavIcon icon={<Home size={20} />} onClick={() => onNavigate('home')} />
-        <NavIcon icon={<History size={20} />} onClick={() => onNavigate('history')} />
-        <NavIcon icon={<CalIcon size={20} />} active onClick={() => onNavigate('calendar')} />
-        <NavIcon icon={<BarChart2 size={20} />} onClick={() => onNavigate('insights')} />
-        <NavIcon icon={<Gift size={20} />} onClick={() => onNavigate('surprise')} />
+      {/* Stats Summary */}
+      <div className="mt-8 grid grid-cols-3 gap-4">
+        <div className="bg-green-50 dark:bg-green-900/10 p-4 rounded-2xl text-center">
+          <Smile className="w-6 h-6 mx-auto text-green-500 mb-1" />
+          <span className="text-xs font-bold text-green-600 dark:text-green-400">Good Days</span>
+        </div>
+        <div className="bg-yellow-50 dark:bg-yellow-900/10 p-4 rounded-2xl text-center">
+          <Meh className="w-6 h-6 mx-auto text-yellow-500 mb-1" />
+          <span className="text-xs font-bold text-yellow-600 dark:text-yellow-400">Mixed</span>
+        </div>
+        <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-2xl text-center">
+          <Frown className="w-6 h-6 mx-auto text-red-500 mb-1" />
+          <span className="text-xs font-bold text-red-600 dark:text-red-400">Rough</span>
+        </div>
       </div>
 
     </div>
-  );
-}
-
-function NavIcon({ icon, active, onClick }) {
-  return (
-    <button onClick={onClick} className={`p-2 rounded-full transition-colors ${active ? 'text-gray-800 bg-pink-100 dark:bg-pink-900/50 dark:text-white' : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}`}>
-      {icon}
-    </button>
   );
 }
